@@ -91,6 +91,8 @@
 
 
 -record(state,{
+	       cluster_deployment,
+
 	       pods,
 	       controllers,
 	       connect_nodes,
@@ -98,6 +100,7 @@
 	       spec_files,
 	       spec_dir,
 	       cluster_name,
+	      
 	       cluster_spec,
 	       nodes_to_connect
 	      }).
@@ -224,13 +227,13 @@ ping()->
 %% --------------------------------------------------------------------
 init([]) ->
     AllEnvs=application:get_all_env(),
-    {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
+    {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
     db_etcd:install(),
     db_etcd:load(),
-    {ok,Cookie}=db_cluster_spec:read(cookie,ClusterSpec),
+    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
     erlang:set_cookie(node(), list_to_atom(Cookie)),
         
-    {ok, #state{cluster_spec=ClusterSpec}
+    {ok, #state{cluster_deployment=ClusterDeployment}
     }.   
  
 

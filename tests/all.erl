@@ -54,12 +54,12 @@ start()->
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% --------------------------------------------------------------------
--define(ClusterSpec,"test_1").
+-define(ClusterDeployment,"single_c100").
 
 setup()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
         
-    AppEnv=[{ops_node,[{cluster_spec,?ClusterSpec}]}],
+    AppEnv=[{ops_node,[{cluster_deployment,?ClusterDeployment}]}],
 
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
