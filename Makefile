@@ -17,6 +17,21 @@ all:
 	git commit -m $(m);
 	git push;
 	echo Ok there you go!
+install:
+	rm -rf  *~ */*~ src/*.beam tests/*.beam
+	rm -rf erl_cra* *.dir;
+	rm -rf rebar.lock;
+	rm -rf  application_specs cluster_specs host_specs;
+	rm -rf  application_deployments cluster_deployments;	
+	rm -rf tests_ebin
+	rm -rf ebin;
+	rm -rf Mnesia.*;
+	rm -rf _build;
+	mkdir ebin;
+	rebar3 compile;	
+	cp _build/default/lib/*/ebin/* ebin;
+	erl -pa * -pa ebin -sname ops_install -run ops_install start -setcookie cookie ops_install
+
 clean:
 	rm -rf  *~ */*~ src/*.beam tests/*.beam
 	rm -rf erl_cra* *.dir;
