@@ -16,10 +16,11 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
--define(HeartbeatTime,5000).
+-define(HeartbeatTime,10000).
 
 %% External exports
 -export([
+	 connect_nodes/1,
 	 initiate/0,
 	 heartbeat/0,
 	 ping/0
@@ -115,10 +116,12 @@ handle_call(Request, From, State) ->
 handle_cast({initiate}, State) ->
     AllEnvs=application:get_all_env(),
     {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
-    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
-    {ok,ClusterDir}=db_cluster_deployment:read(dir,ClusterDeployment),
-    {ok,ControllerHostSpecs}=db_cluster_deployment:read(controller_hosts,ClusterDeployment),
-    {ok,WorkerHostSpecs}=db_cluster_deployment:read(worker_hosts,ClusterDeployment),
+    {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_deployment,read,[cookie,ClusterDeployment],5000),
+    {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_deployment,read,[dir,ClusterDeployment],5000),
+    {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_deployment,read,
+					 [controller_hosts,ClusterDeployment],5000),
+    {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_deployment,read,
+				     [worker_hosts,ClusterDeployment],5000),
     ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
     ConnectNodeName=ClusterDeployment++"_"++"connect_node",
     ConnectNodesInfo=[{HostName,
@@ -177,7 +180,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %% --------------------------------------------------------------------
 hbeat(State)->
-    ConnectResult=connect_nodes(State),
+    ConnectResult=rpc:call(node(),?MODULE,connect_nodes,[State],5000),
     io:format("ConnectResult ~p~n",[{ConnectResult,?MODULE,?LINE}]), 
   
     timer:sleep(?HeartbeatTime),

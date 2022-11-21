@@ -55,13 +55,15 @@ start()->
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% --------------------------------------------------------------------
--define(ClusterDeployment,"single_c100").
+-define(ClusterDeployment,"many_c100_c200").
 
 setup()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
         
     AppEnv=[{ops_node,[{cluster_deployment,?ClusterDeployment}]}],
-
+    erlang:set_cookie(node(),cookie_many_c100_c200),
+    rpc:multicall(['many_c100_c200_connect_node@c100',
+		   'many_c100_c200_connect_node@c200'],init,stop,[]),
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
     pong=ops_node:ping(),

@@ -16,6 +16,8 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
+-define(LocalResources,[{db_etcd,node()},{nodelog,node()}]).
+-define(Target,[db_etcd,nodelog]).
 
 %% External exports
 -export([
@@ -89,9 +91,6 @@ init([]) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 
-
-
-
 handle_call({get_state},_From, State) ->
     Reply=State,
     {reply, Reply, State};
@@ -125,6 +124,10 @@ handle_cast(Msg, State) ->
 
 handle_info(timeout, State) -> %% Initil start - kick orchestration 
     io:format("timeout ~p~n",[{?MODULE,?LINE}]), 
+    [rd:add_local_resource(Type,Instance)||{Type,Instance}<-?LocalResources],
+    [rd:add_target_resource_type(Type)||Type<-?Target],
+    rd:trade_resources(),
+    timer:sleep(3000),
     ok=ops_update_state_server:initiate(),
     
     {noreply, State};

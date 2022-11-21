@@ -13,7 +13,6 @@ all:
 	cp _build/default/lib/*/ebin/* ebin;
 	rm -rf _build;
 	rm -rf tests_ebin;
-	rm -rf ebin;
 	git add -f *;
 	git commit -m $(m);
 	git push;
