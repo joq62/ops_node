@@ -26,7 +26,8 @@ start()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
 
     ok=setup(),
-
+    io:format("Start State ~p~n",[{ops_node:get_state(),?MODULE,?FUNCTION_NAME}]),
+     
    
    
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
@@ -64,6 +65,7 @@ setup()->
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
     pong=ops_node:ping(),
+    pong=ops_update_state_server:ping(),
 
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),

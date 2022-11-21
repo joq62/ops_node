@@ -37,9 +37,10 @@ init([]) ->
 		    start=>{nodelog,start,[]}},
 		  #{id=>db_etcd,
 		    start=>{db_etcd_server,start,[]}},
+		   #{id=>ops_update_state,
+		     start=>{ops_update_state_server,start,[]}},		 
 		   #{id=>ops_node,
-		    start=>{ops_node_server,start,[]}}
-		   
+		    start=>{ops_node_server,start,[]}}		   
 		 ],
     {ok, {SupFlags, ChildSpecs}}.
 

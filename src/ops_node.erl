@@ -11,6 +11,7 @@
 %% Internal exports
 %% --------------------------------------------------------------------
 -export([
+	 get_state/0,
 	 ping/0
 
 	]).
@@ -29,6 +30,9 @@
 %% --------------------------------------------------------------------
 ping() ->
     gen_server:call(?SERVER, {ping}).
+
+get_state() ->
+    gen_server:call(?SERVER, {get_state}).
 
 
     

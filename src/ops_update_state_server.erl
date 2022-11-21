@@ -7,7 +7,7 @@
 %%% 
 %%% Created : 10 dec 2012
 %%% -------------------------------------------------------------------
--module(ops_node_server).
+-module(ops_update_state_server).
  
 -behaviour(gen_server).
 
@@ -16,9 +16,13 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
+-define(HeartbeatTime,5000).
 
 %% External exports
 -export([
+	 initiate/0,
+	 heartbeat/0,
+	 ping/0
 	]).
 
 
@@ -35,9 +39,15 @@
 -export([init/1, handle_call/3,handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%-------------------------------------------------------------------
-
 -record(state,{
-	     	      
+	       cluster_deployment,
+	       cookie,
+	       controller_host_specs,
+	       worker_host_specs,
+	       connect_host_specs,
+	       connect_nodename,
+	       connect_nodes_info,
+	       cluster_dir
 	      }).
 
 
@@ -51,8 +61,13 @@ start()-> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 stop()-> gen_server:call(?MODULE, {stop},infinity).
 
 
-
+ping() ->
+    gen_server:call(?MODULE, {ping}).
 %% cast
+heartbeat()-> 
+    gen_server:cast(?MODULE, {heartbeat}).
+initiate()-> 
+    gen_server:cast(?MODULE, {initiate}).
 
 %% ====================================================================
 %% Server functions
@@ -66,16 +81,10 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 %%          ignore               |
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
-init([]) ->
-    AllEnvs=application:get_all_env(),
-    {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
-    db_etcd:install(),
-    db_etcd:load(),
-    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
-        
-    erlang:set_cookie(node(), list_to_atom(Cookie)),
-        
-    {ok, #state{},0}.   
+init([]) -> 
+    io:format("Started Server ~p~n",[{?MODULE,?LINE}]),
+
+    {ok, #state{}}.   
  
 
 %% --------------------------------------------------------------------
@@ -88,14 +97,6 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-
-
-
-
-handle_call({get_state},_From, State) ->
-    Reply=State,
-    {reply, Reply, State};
-
 handle_call({ping},_From, State) ->
     Reply=pong,
     {reply, Reply, State};
@@ -111,6 +112,36 @@ handle_call(Request, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_cast({initiate}, State) ->
+    AllEnvs=application:get_all_env(),
+    {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
+    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
+    {ok,ClusterDir}=db_cluster_deployment:read(dir,ClusterDeployment),
+    {ok,ControllerHostSpecs}=db_cluster_deployment:read(controller_hosts,ClusterDeployment),
+    {ok,WorkerHostSpecs}=db_cluster_deployment:read(worker_hosts,ClusterDeployment),
+    ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
+    ConnectNodeName=ClusterDeployment++"_"++"connect_node",
+    ConnectNodesInfo=[{HostName,
+		       ConnectNodeName,
+		       list_to_atom(ConnectNodeName++"@"++HostName)}||HostName<-ConnectHostSpecs],    
+    InitialState=State#state{cluster_deployment=ClusterDeployment,
+			     cookie=Cookie,
+			     controller_host_specs=ControllerHostSpecs,
+			     worker_host_specs=WorkerHostSpecs,
+			     connect_nodename=ConnectNodeName,
+			     connect_host_specs=ConnectHostSpecs,
+			     connect_nodes_info=ConnectNodesInfo,
+			     cluster_dir=ClusterDir},
+  %  gl=InitialState,
+    ops_update_state_server:heartbeat(),
+    {noreply,InitialState};
+
+
+handle_cast({heartbeat}, State) ->
+    io:format("  ~p~n",[{heartbeat,?MODULE,?LINE}]), 
+    spawn(fun()->hbeat(State) end),
+    {noreply, State};
+
 handle_cast(Msg, State) ->
     io:format("unmatched match cast ~p~n",[{Msg,?MODULE,?LINE}]),
     {noreply, State}.
@@ -122,13 +153,6 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-
-handle_info(timeout, State) -> %% Initil start - kick orchestration 
-    io:format("timeout ~p~n",[{?MODULE,?LINE}]), 
-    ok=ops_update_state_server:initiate(),
-    
-    {noreply, State};
-
 handle_info(Info, State) ->
     io:format("unmatched match~p~n",[{Info,?MODULE,?LINE}]), 
     {noreply, State}.
@@ -152,3 +176,50 @@ code_change(_OldVsn, State, _Extra) ->
 %% --------------------------------------------------------------------
 %%% Internal functions
 %% --------------------------------------------------------------------
+hbeat(State)->
+    ConnectResult=connect_nodes(State),
+    io:format("ConnectResult ~p~n",[{ConnectResult,?MODULE,?LINE}]), 
+  
+    timer:sleep(?HeartbeatTime),
+    rpc:cast(node(),?MODULE,heartbeat,[]).
+
+
+
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%% --------------------------------------------------------------------
+-define(TimeOut,10000).
+
+connect_nodes(State)->
+    Present=[{HostName,NodeName,Node}||{HostName,NodeName,Node}<-State#state.connect_nodes_info,
+				       true=:=ops_connect_node:present(Node)],
+    io:format("Present ~p~n",[{Present,?MODULE,?LINE}]), 
+    MissingNodes=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
+			    false=:=lists:member(NodeInfo,Present)],
+    io:format("MissingNodes ~p~n",[{MissingNodes,?MODULE,?LINE}]), 
+    NodeDir=State#state.cluster_dir,
+    Cookie=State#state.cookie,
+    PaArgs=" -pa "++NodeDir,
+    EnvArgs=" -detached ",
+    NodesToConnect=[Node||{_HostName,_NodeName,Node}<-State#state.connect_nodes_info],
+    create_connect_nodes(MissingNodes,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[]).
+    
+
+create_connect_nodes([],_NodeDir,_Cookie,_PaArgs,_EnvArgs,_NodesToConnect,Acc)->
+    Acc;
+
+create_connect_nodes([{HostName,NodeName,_Node}|T],NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,Acc)->
+    R=ops_connect_node:create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
+    create_connect_nodes(T,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[R|Acc]).
+
+
+%cluster_deployment,
+%	       cookie,
+%	       controller_hosts,
+%	       worker_hosts,
+%	       connect_hosts,
+%	       connect_nodename,
+%	       connect_nodes_info,
+%	       cluster_dir
