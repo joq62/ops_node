@@ -35,6 +35,7 @@ start()->
     pong=common:ping(),
     db_etcd:install(),
     db_etcd:load(),
+    install("many_c100_c200","c100","ops_node"),
     ok.
     
 
@@ -53,7 +54,7 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     [{ok,HostName}]=[db_host_spec:read(hostname,HostSpec)||HostSpec<-ControllerHostSpecs,
 							   StartHostSpec=:=HostSpec],
     NodeName=ClusterDeployment++"_"++"connect_node",    
-    NodesToConnect=node(),
+    NodesToConnect=[node()],
     Node=list_to_atom(NodeName++"@"++HostName),
     rpc:call(Node,init,stop,[]),
     timer:sleep(3000),
@@ -68,6 +69,7 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     {ok,App}=db_appl_spec:read(app,ApplSpec),
 
     DirToClone=filename:join(ClusterDir,AppId),  
+    ok=rpc:call(Node,file,make_dir,[DirToClone],5000),
     {ok,_CloneDir}=appl:git_clone_to_dir(Node,GitPath,DirToClone),
     Paths=[filename:join(DirToClone,"ebin")],
     ok=appl:load(Node,App,Paths),

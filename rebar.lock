@@ -1,6 +1,6 @@
 [{<<"common">>,
   {git,"https://github.com/joq62/common.git",
-       {ref,"2867df809f643a017ff0236152726725d078cd21"}},
+       {ref,"9d7273c4bf9e504508ec1ce6581a2b105a77591d"}},
   0},
  {<<"db_etcd">>,
   {git,"https://github.com/joq62/db_etcd.git",

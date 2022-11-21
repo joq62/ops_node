@@ -1,1 +1,1 @@
-ops_install:init("many_c100_c200","c100","ops_node").
+ops_install:install("many_c100_c200","c100","ops_node").
