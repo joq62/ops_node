@@ -4,7 +4,7 @@
   0},
  {<<"db_etcd">>,
   {git,"https://github.com/joq62/db_etcd.git",
-       {ref,"43f54c1c132ec574075f4a9972c0f2b87dff422a"}},
+       {ref,"eb2232628d446b5fd4f174788d7ce5d92d98c134"}},
   0},
  {<<"nodelog">>,
   {git,"https://github.com/joq62/nodelog.git",

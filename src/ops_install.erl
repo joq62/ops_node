@@ -53,29 +53,40 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     {ok,ControllerHostSpecs}=db_cluster_deployment:read(controller_hosts,ClusterDeployment),
     [{ok,HostName}]=[db_host_spec:read(hostname,HostSpec)||HostSpec<-ControllerHostSpecs,
 							   StartHostSpec=:=HostSpec],
-    NodeName=ClusterDeployment++"_"++"connect_node",    
+    ConnectNodeName=ClusterDeployment++"_"++"connect_node",    
     NodesToConnect=[node()],
-    Node=list_to_atom(NodeName++"@"++HostName),
-    rpc:call(Node,init,stop,[]),
+    ConnectNode=list_to_atom(ConnectNodeName++"@"++HostName),
+    rpc:call(ConnectNode,init,stop,[]),
     timer:sleep(3000),
     PaArgs=" -pa "++ClusterDir,
     EnvArgs=" -detached ",
-    ops_connect_node:create(HostName,NodeName,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
-    pong=net_adm:ping(Node),
+    ops_vm:ssh_create(HostName,ConnectNodeName,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
+    pong=net_adm:ping(ConnectNode),
     
-  
+    % Create the pod
+    PodNodeName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
+    PodDir=PodNodeName++".dir",
+    
     {ok,GitPath}=db_appl_spec:read(gitpath,ApplSpec),
     {ok,AppId}=db_appl_spec:read(appl_name,ApplSpec),
     {ok,App}=db_appl_spec:read(app,ApplSpec),
 
-    DirToClone=filename:join(ClusterDir,AppId),  
-    ok=rpc:call(Node,file,make_dir,[DirToClone],5000),
-    {ok,_CloneDir}=appl:git_clone_to_dir(Node,GitPath,DirToClone),
+
+    PodNodeName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
+    PodDir=PodNodeName++".dir",
+    PodDirPath=filename:join(ClusterDir,PodDir),
+    ok=rpc:call(ConnectNode,file,make_dir,[PodDirPath],5000),
+    {ok,PodNode,PodDirPath}=ops_vm:create(HostName,ConnectNode,PodNodeName,PodDir,Cookie),
+
+
+    DirToClone=filename:join([ClusterDir,PodDir,AppId]),  
+    ok=rpc:call(PodNode,file,make_dir,[DirToClone],5000),
+    {ok,_CloneDir}=appl:git_clone_to_dir(PodNode,GitPath,DirToClone),
     Paths=[filename:join(DirToClone,"ebin")],
-    ok=appl:load(Node,App,Paths),
-    AppEnv=[{ops_node,[{cluster_deployment,ClusterDeployment}]}],
-    ok=rpc:call(Node,application,set_env,[AppEnv],5000), 
-    ok=appl:start(Node,App),
+    ok=appl:load(PodNode,App,Paths),
+    AppEnv=[{App,[{cluster_deployment,ClusterDeployment}]}],
+    ok=rpc:call(PodNode,application,set_env,[AppEnv],5000), 
+    ok=appl:start(PodNode,App),
     ok.
     
 

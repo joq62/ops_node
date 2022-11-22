@@ -197,7 +197,7 @@ hbeat(State)->
 
 connect_nodes(State)->
     Present=[{HostName,NodeName,Node}||{HostName,NodeName,Node}<-State#state.connect_nodes_info,
-				       true=:=ops_connect_node:present(Node)],
+				       true=:=ops_vm:present(Node)],
     io:format("Present ~p~n",[{Present,?MODULE,?LINE}]), 
     MissingNodes=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
 			    false=:=lists:member(NodeInfo,Present)],
@@ -214,7 +214,7 @@ create_connect_nodes([],_NodeDir,_Cookie,_PaArgs,_EnvArgs,_NodesToConnect,Acc)->
     Acc;
 
 create_connect_nodes([{HostName,NodeName,_Node}|T],NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,Acc)->
-    R=ops_connect_node:create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
+    R=ops_vm:ssh_create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
     create_connect_nodes(T,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[R|Acc]).
 
 
