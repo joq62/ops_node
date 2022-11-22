@@ -67,7 +67,8 @@ setup()->
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
     pong=ops_node:ping(),
-    pong=ops_update_state_server:ping(),
+    pong=ops_cluster_controller_server:ping(),
+    pong=ops_application_controller_server:ping(),
 
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),

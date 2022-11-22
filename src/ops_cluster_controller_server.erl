@@ -7,7 +7,7 @@
 %%% 
 %%% Created : 10 dec 2012
 %%% -------------------------------------------------------------------
--module(ops_update_state_server).
+-module(ops_cluster_controller_server).
  
 -behaviour(gen_server).
 
@@ -114,6 +114,7 @@ handle_call(Request, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 handle_cast({initiate}, State) ->
+    
     AllEnvs=application:get_all_env(),
     {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
     {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_deployment,read,[cookie,ClusterDeployment],5000),
@@ -136,7 +137,7 @@ handle_cast({initiate}, State) ->
 			     connect_nodes_info=ConnectNodesInfo,
 			     cluster_dir=ClusterDir},
   %  gl=InitialState,
-    ops_update_state_server:heartbeat(),
+    ?MODULE:heartbeat(),
     {noreply,InitialState};
 
 
