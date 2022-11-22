@@ -46,7 +46,7 @@ start()->
 %% -------------------------------------------------------------------
 
 install(ClusterDeployment,StartHostSpec,ApplSpec)->    
-    %% Kill ops_node == connect Node
+    %%  % Create the connect node
     {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
     erlang:set_cookie(node(),list_to_atom(Cookie)),
     {ok,ClusterDir}=db_cluster_deployment:read(dir,ClusterDeployment),
@@ -63,21 +63,19 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     ops_vm:ssh_create(HostName,ConnectNodeName,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
     pong=net_adm:ping(ConnectNode),
     
+    % clean up from previous
+   
     % Create the pod
-    PodNodeName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
-    PodDir=PodNodeName++".dir",
-    
-    {ok,GitPath}=db_appl_spec:read(gitpath,ApplSpec),
-    {ok,AppId}=db_appl_spec:read(appl_name,ApplSpec),
-    {ok,App}=db_appl_spec:read(app,ApplSpec),
-
-
     PodNodeName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
     PodDir=PodNodeName++".dir",
     PodDirPath=filename:join(ClusterDir,PodDir),
     ok=rpc:call(ConnectNode,file,make_dir,[PodDirPath],5000),
-    {ok,PodNode,PodDirPath}=ops_vm:create(HostName,ConnectNode,PodNodeName,PodDir,Cookie),
+    {ok,PodNode,PodDir}=ops_vm:create(HostName,ConnectNode,PodNodeName,PodDir,Cookie),
 
+    % load and start ops_node
+    {ok,GitPath}=db_appl_spec:read(gitpath,ApplSpec),
+    {ok,AppId}=db_appl_spec:read(appl_name,ApplSpec),
+    {ok,App}=db_appl_spec:read(app,ApplSpec),
 
     DirToClone=filename:join([ClusterDir,PodDir,AppId]),  
     ok=rpc:call(PodNode,file,make_dir,[DirToClone],5000),
@@ -86,7 +84,8 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     ok=appl:load(PodNode,App,Paths),
     AppEnv=[{App,[{cluster_deployment,ClusterDeployment}]}],
     ok=rpc:call(PodNode,application,set_env,[AppEnv],5000), 
-    ok=appl:start(PodNode,App),
+    ok=rpc:call(PodNode,application,start,[App],10000),
+   
     ok.
     
 
