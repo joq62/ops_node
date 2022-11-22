@@ -16,7 +16,7 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
--define(HeartbeatTime,10000).
+-define(HeartbeatTime,60*1000).
 
 %% External exports
 -export([
@@ -120,9 +120,9 @@ handle_cast({initiate}, State) ->
     {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_deployment,read,[cookie,ClusterDeployment],5000),
     {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_deployment,read,[dir,ClusterDeployment],5000),
     {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_deployment,read,
-					 [controller_hosts,ClusterDeployment],5000),
+					 [controller_host_specs,ClusterDeployment],5000),
     {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_deployment,read,
-				     [worker_hosts,ClusterDeployment],5000),
+				     [worker_host_specs,ClusterDeployment],5000),
     ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
     ConnectNodeName=ClusterDeployment++"_"++"connect_node",
     ConnectNodesInfo=[{HostName,
