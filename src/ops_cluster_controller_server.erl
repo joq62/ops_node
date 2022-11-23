@@ -98,6 +98,10 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_call({connect_nodes_info},_From, State) ->
+    Reply=State#state.connect_nodes_info,
+    {reply, Reply, State};
+
 handle_call({ping},_From, State) ->
     Reply=pong,
     {reply, Reply, State};

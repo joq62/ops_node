@@ -34,7 +34,6 @@ start()->
     pong=db_etcd:ping(),
     pong=common:ping(),
     db_etcd:install(),
-    db_etcd:load(),
     install("many_c100_c200","c100","ops_node"),
     ok.
     
@@ -50,7 +49,7 @@ install(ClusterDeployment,StartHostSpec,ApplSpec)->
     {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
     erlang:set_cookie(node(),list_to_atom(Cookie)),
     {ok,ClusterDir}=db_cluster_deployment:read(dir,ClusterDeployment),
-    {ok,ControllerHostSpecs}=db_cluster_deployment:read(controller_hosts,ClusterDeployment),
+    {ok,ControllerHostSpecs}=db_cluster_deployment:read(controller_host_specs,ClusterDeployment),
     [{ok,HostName}]=[db_host_spec:read(hostname,HostSpec)||HostSpec<-ControllerHostSpecs,
 							   StartHostSpec=:=HostSpec],
     ConnectNodeName=ClusterDeployment++"_"++"connect_node",    

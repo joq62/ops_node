@@ -28,20 +28,14 @@ start()->
     ok=setup(),
     io:format("Start State ~p~n",[{ops_node:get_state(),?MODULE,?FUNCTION_NAME}]),
      
+    ok,pod_deployment_2_tests:start(),
+    
    
    
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
  %   timer:sleep(2000),
  %  init:stop(),
     ok.
-
-
-%% --------------------------------------------------------------------
-%% Function: available_hosts()
-%% Description: Based on hosts.config file checks which hosts are avaible
-%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
-%% --------------------------------------------------------------------
-
 
 
 %% --------------------------------------------------------------------
@@ -69,7 +63,6 @@ setup()->
     pong=ops_node:ping(),
     pong=ops_cluster_controller_server:ping(),
     pong=ops_application_controller_server:ping(),
-
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
 

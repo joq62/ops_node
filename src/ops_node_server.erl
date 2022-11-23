@@ -38,7 +38,7 @@
 
 %%-------------------------------------------------------------------
 
--record(state,{
+-record(state,{cluster_deployment_spec
 	     	      
 	      }).
 
@@ -70,13 +70,13 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 %% --------------------------------------------------------------------
 init([]) ->
     AllEnvs=application:get_all_env(),
-    {cluster_deployment,ClusterDeployment}=lists:keyfind(cluster_deployment,1,AllEnvs),
+    {cluster_deployment,ClusterDeploymentSpec}=lists:keyfind(cluster_deployment,1,AllEnvs),
     db_etcd:install(),
-    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeployment),
+    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeploymentSpec),
         
     erlang:set_cookie(node(), list_to_atom(Cookie)),
         
-    {ok, #state{},0}.   
+    {ok, #state{cluster_deployment_spec=ClusterDeploymentSpec},0}.   
  
 
 %% --------------------------------------------------------------------
@@ -89,6 +89,52 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+
+handle_call({gitpath,ApplSpec},_From, State) ->
+    Reply=db_appl_spec:read(gitpath,ApplSpec),
+    {reply, Reply, State};
+
+handle_call({app,ApplSpec},_From, State) ->
+    Reply=db_appl_spec:read(app,ApplSpec),
+    {reply, Reply, State};
+
+
+handle_call({appl_name,ApplSpec},_From, State) ->
+    Reply=db_appl_spec:read(appl_name,ApplSpec),
+    {reply, Reply, State};
+
+
+handle_call({hostname,HostSpec},_From, State) ->
+    Reply=db_host_spec:read(hostname,HostSpec),
+    {reply, Reply, State};
+
+handle_call({worker_host_specs,ClusterDeploymentSpec},_From, State) ->
+    Reply=db_cluster_deployment:read(worker_host_specs,ClusterDeploymentSpec),
+    {reply, Reply, State};
+
+handle_call({application_spec,ApplicationSpec},_From, State) ->
+    Reply=db_appl_spec:read(ApplicationSpec),
+    {reply, Reply, State};
+
+handle_call({application_deployment_info,ApplDeploymentSpec},_From, State) ->
+    Reply=db_appl_deployment:read(ApplDeploymentSpec),
+    {reply, Reply, State};
+
+handle_call({cluster_application_deployments,
+	     appl_deployment_specs,ClusterApplDeployment},_From, State) ->
+    Reply= db_cluster_application_deployment:read(appl_deployment_specs,ClusterApplDeployment),
+    
+    {reply, Reply, State};
+handle_call({cluster_application_deployments,
+	     cluster_spec,ClusterSpec},_From, State) ->
+    Reply=[SpecId||{SpecId,X_ClusterSpec,_ApplDeploySpecs}<-db_cluster_application_deployment:read_all(),
+						       X_ClusterSpec=:=ClusterSpec],
+    {reply, Reply, State};
+
+handle_call({cluster_deployment_spec},_From, State) ->
+    Reply=State#state.cluster_deployment_spec,
+    {reply, Reply, State};
+
 
 handle_call({get_state},_From, State) ->
     Reply=State,
