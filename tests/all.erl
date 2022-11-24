@@ -28,7 +28,7 @@ start()->
     ok=setup(),
     io:format("Start State ~p~n",[{ops_node:get_state(),?MODULE,?FUNCTION_NAME}]),
      
-    ok,pod_deployment_2_tests:start(),
+    ok=pod_deployment_2_tests:start(),
     
    
    

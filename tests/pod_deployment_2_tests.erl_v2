@@ -54,10 +54,8 @@ read_specs_test()->
     {ok,ApplDeploymentSpecs}=ops_node:cluster_application_deployments(appl_deployment_specs,ClusterSpec),
     ["math"]=ApplDeploymentSpecs,
 
-    %%%
-    PodDeployInfoResult=pod_deployment_info(ClusterApplicationDeployments),
-  %  PodDeployInfoList=pod_deployment_info(ApplDeploymentSpecs,WorkerHostSpecs),
-   % [true,true]=[lists:member({spec_id,"math"},L)||L<-PodDeployInfoList],
+    PodDeployInfoList=pod_deployment_info(ApplDeploymentSpecs,WorkerHostSpecs),
+    [true,true]=[lists:member({spec_id,"math"},L)||L<-PodDeployInfoList],
   
 %% Store in db_etcd
 %% DeployId, Stats, PodDeployInfo + Status candidate, deployed 
@@ -72,61 +70,48 @@ read_specs_test()->
    %  ]
    % ]=PodDeployInfoList,
 
-  %  [Status,DepId,ClusterApplicationDeploymentId,ClusterSpecId,HostSpecId,ApplSpecId]=x,
+
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
     ok.
 
+pod_deployment_info(ApplDeploymentSpecs,WorkerHostSpecs)->
+    pod_deployment_info(ApplDeploymentSpecs,WorkerHostSpecs,[]).
 
-
-pod_deployment_info(ClusterApplicationDeployments)->
-    pod_deployment_info(ClusterApplicationDeployments,[]).
-
-pod_deployment_info([],Acc)->
-    Acc;
-pod_deployment_info([ClusterApplicationDeploymentId|T],Acc) ->
-
-    {ok,ClusterDeploymentId}=ops_node:cluster_application_deployments(cluster_specs,ClusterApplicationDeploymentId),
-    {ok,WorkerHostSpecs}=db_cluster_deployment:read(worker_host_specs,ClusterDeploymentId),
-    {ok,ApplDeploymentSpecs}=ops_node:cluster_application_deployments(appl_deployment_specs,ClusterApplicationDeploymentId),
-  %  DeplId=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod_info",
-    glurk=pod_deployment_info(ApplDeploymentSpecs,WorkerHostSpecs,[]),
-    
-
-
-  %  R=ops_node:create_pod_info(DeplId,ApplDeployId,Status,
-%			       PodName,PodNode,PodDir,
-%			       ClusterApplicationDeploymentId,ClusterSpecId,
-%			       HostSpecId,
-%			       ApplSpecId),
-    
-    pod_deployment_info(T,[glurk|Acc]).
-
+						
 pod_deployment_info([],WorkerHostSpecs,Acc)->
     Acc;
 pod_deployment_info([ApplDeploymentSpec|T],WorkerHostSpecs,Acc) ->
- %   {_SpecId,ApplSpec,Vsn,NumInstances,[]}=ops_node:application_deployment_info(ApplDeploymentSpec),
-    PodInfoList=appl_info(ApplDeploymentSpec,WorkerHostSpecs),
-  %  NewAcc=lists:append(PodInfoList,Acc),
-    NewAcc=[PodInfoList|Acc],
+    ApplDeploymentInfo=ops_node:application_deployment_info(ApplDeploymentSpec),
+    PodInfoList=appl_info(ApplDeploymentInfo,WorkerHostSpecs),
+    NewAcc=lists:append(PodInfoList,Acc),
     pod_deployment_info(T,WorkerHostSpecs,NewAcc).
    
 
 %% Affinity = []
-
 appl_info({SpecId,ApplSpec,Vsn,NumInstances,[]},HostSpecList)->
     appl_info(SpecId,ApplSpec,Vsn,NumInstances,HostSpecList,[]).
+
 appl_info(_SpecId,_ApplSpec,_Vsn,0,_HostSpecList,Acc)->    
     Acc;
 appl_info(SpecId,ApplSpec,Vsn,N,[HostSpec|T],Acc)->
-    {ok,HostName}=db_host_spec:read(hostname,HostSpec),
-    PodName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",  
-    PodNode=list_to_atom(PodName++"@"++HostName),
-    PodDir=PodName++".dir",
-    Info=[{host_spec,HostSpec},{appl_spec,ApplSpec},
-		{pod_name,PodName},{pod_node,PodNode},
-		{pod_dir,PodDir}],
-    NewAcc=[Info|Acc],
+    {ok,HostName}=ops_node:hostname(HostSpec),
+    PodNodeName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",  
+    PodNode=list_to_atom(PodNodeName++"@"++HostName),
+    PodDir=PodNodeName++".dir",
+    {ok,ApplName}=ops_node:appl_name(ApplSpec),
+    {ok,App}=ops_node:app(ApplSpec),
+    {ok,GitPath}=ops_node:gitpath(ApplSpec),
+
+    NewAcc=[[{spec_id,SpecId},
+	     {host_spec,HostSpec},
+	     {pod_node_name,PodNodeName},
+	     {pod_node,PodNode},
+	     {pod_dir,PodDir},
+	     {appl_name,ApplName},
+	     {app,App},
+	     {gitpath,GitPath}
+	    ]|Acc],
     RotatedHostSpecList=lists:append(T,[HostSpec]),
     appl_info(SpecId,ApplSpec,Vsn,N-1,RotatedHostSpecList,NewAcc).
  
