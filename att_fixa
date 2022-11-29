@@ -1,1 +1,1 @@
-* cluster_deployment : cluster_name->cluster_spec!
+cluster_deployment : cluster_name->cluster_spec!

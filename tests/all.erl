@@ -28,7 +28,7 @@ start()->
     ok=setup(),
     io:format("Start State ~p~n",[{ops_node:get_state(),?MODULE,?FUNCTION_NAME}]),
      
-    ok=pod_deployment_2_tests:start(),
+    ok=pod_tests:start(),
     
    
    
@@ -49,15 +49,15 @@ start()->
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% --------------------------------------------------------------------
--define(ClusterDeployment,"many_c100_c200").
+-define(ClusterDeployment,"many_c200_c201").
 
 setup()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
         
     AppEnv=[{ops_node,[{cluster_deployment,?ClusterDeployment}]}],
-    erlang:set_cookie(node(),cookie_many_c100_c200),
-    rpc:multicall(['many_c100_c200_connect_node@c100',
-		   'many_c100_c200_connect_node@c200'],init,stop,[]),
+    erlang:set_cookie(node(),cookie_many_200_c201),
+    rpc:multicall(['many_c200_c201_connect_node@c200',
+		   'many_c200_c201_connect_node@c201'],init,stop,[]),
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
     pong=ops_node:ping(),
