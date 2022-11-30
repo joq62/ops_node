@@ -40,6 +40,7 @@ start()->
     pong=rpc:call(PodNode,rd,ping,[]),
    
     42=rpc:call(PodNode,rd,rpc_call,[adder,test_add,add,[20,22]]),
+    42=rpc:call(PodNode,rd,rpc_call,[db_etcd,db_etcd,ping,[]]),
     {error,[eexists_resources]}=rpc:call(PodNode,rd,rpc_call,[glurk,test_add,add,[20,22]]),
      
     
