@@ -185,7 +185,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %% --------------------------------------------------------------------
 hbeat(State)->
-    ConnectResult=rpc:call(node(),?MODULE,connect_nodes,[State],5000),
+    ConnectResult=rpc:call(node(),?MODULE,connect_nodes,[State],20*1000),
     io:format("ConnectResult ~p~n",[{ConnectResult,?MODULE,?LINE}]), 
   
     timer:sleep(?HeartbeatTime),
@@ -219,8 +219,18 @@ create_connect_nodes([],_NodeDir,_Cookie,_PaArgs,_EnvArgs,_NodesToConnect,Acc)->
     Acc;
 
 create_connect_nodes([{HostName,NodeName,_Node}|T],NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,Acc)->
-    R=ops_vm:ssh_create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
-    create_connect_nodes(T,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[R|Acc]).
+    HostSpec=HostName, %% shall be changed!!!!!!!!!!!!!!!!!
+    {ok,ConnectNode,_,_}=ops_vm:ssh_create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
+
+    io:format("ConnectNode  ~p~n",[{ConnectNode,?MODULE,?LINE}]), 
+    {ok,PodNode,PodDir}= ops_pod:create(ConnectNode,HostSpec),
+    io:format("PodNode,PodDir  ~p~n",[{PodNode,PodDir,?MODULE,?LINE}]), 
+
+    {ok,pod_app,PodAppDir}= ops_pod:load_start(PodNode,PodDir),
+    {ok,db_etcd_app,DbEtcdDir}= ops_pod:load_start(PodNode,PodDir,"db_etcd_app"),
+   
+    io:format("HostSpec,ConnectNode  ~p~n",[{HostSpec,ConnectNode,?MODULE,?LINE}]), 
+    create_connect_nodes(T,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[{ConnectNode,PodNode,PodDir}|Acc]).
 
 
 %cluster_deployment,
