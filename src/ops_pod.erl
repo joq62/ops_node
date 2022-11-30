@@ -9,15 +9,14 @@
 %%% Pod consits beams from all services, app and app and sup erl.
 %%% The setup of envs is
 %%% -------------------------------------------------------------------
--module(ops_vm).   
+-module(ops_pod).   
  
 -export([
-	 ssh_create/7,
-	 ssh_create/8,
-	 ssh_delete/3,
-	 create/5,
+	 create/2,
+	 create/4,
 	 delete/3,
-	 
+	 load_start/2,
+	 load_start/3,
 	 present/1
 	]).
 		 
@@ -25,6 +24,64 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
+-define(PodAppl,"pod_app").
+
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% ------------------------------------------------------------------
+create(ConnectNode,HostSpec)->
+    
+    PodName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
+    PodDir=PodName++".dir",
+    create(ConnectNode,HostSpec,PodName,PodDir).
+    
+create(ConnectNode,HostSpec,PodName,PodDir)->
+    Cookie=atom_to_list(rpc:call(ConnectNode,erlang,get_cookie,[])),
+    os:cmd("rm -rf "++PodDir),
+    {ok,HostName}=db_host_spec:read(hostname,HostSpec),
+    ops_vm:create(HostName,ConnectNode,PodName,PodDir,Cookie).
+
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% ------------------------------------------------------------------
+
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% ------------------------------------------------------------------
+load_start(PodNode,PodDir)->
+    load_start(PodNode,PodDir,?PodAppl).
+
+load_start(PodNode,PodDir,Appl)->
+    {ok,App}=db_appl_spec:read(app,Appl),
+    {ok,GitPath}=db_appl_spec:read(gitpath,Appl),
+    ApplDir=filename:join(PodDir,Appl),
+    ApplEbin=filename:join(ApplDir,"ebin"),
+    ok=file:make_dir(ApplDir),
+    {ok,_}=appl:git_clone_to_dir(PodNode,GitPath,ApplDir),
+    ok=appl:load(PodNode,App,[ApplDir,ApplEbin]),
+    ok=appl:start(PodNode,App),
+
+
+    {ok,LocalTypes}=db_appl_spec:read(local_type,Appl),
+    {ok,TargetTypes}=db_appl_spec:read(target_type,Appl),
+    [rpc:call(PodNode,rd,add_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypes],
+    [rpc:call(PodNode,rd,add_target_resource_type,[TargetType],5000)||TargetType<-TargetTypes],
+    ok=rpc:call(PodNode,rd,trade_resources,[],5000),
+    timer:sleep(2000),
+  
+    {ok,App,ApplDir}.
+    
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% -------------------------------------------------------------------
 present(Node)->
     case net_adm:ping(Node) of
 	pong->
@@ -92,7 +149,7 @@ delete(ControllerNode,PodeNode,PodDir)->
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% -------------------------------------------------------------------
 create(HostName,ControllerNode,PodNodeName,PodDir,Cookie)->
-    Args=" -setcookie "++Cookie, 
+    Args=" -setcookie "++Cookie,
     Result=case rpc:call(ControllerNode,slave,start,[HostName,PodNodeName,Args],5000) of
 	       {badrpc,Reason}->
 		   {error,[badrpc,Reason,?MODULE,?FUNCTION_NAME,?LINE]};

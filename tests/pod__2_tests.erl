@@ -9,7 +9,7 @@
 %%% Pod consits beams from all services, app and app and sup erl.
 %%% The setup of envs is
 %%% -------------------------------------------------------------------
--module(pod_tests).      
+-module(pod__2_tests).      
  
 -export([start/0]).
 %% --------------------------------------------------------------------
@@ -24,48 +24,20 @@
 %% --------------------------------------------------------------------
 start()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    
-    
 
     ok=setup(),
-    {ok,SimConNode,HostSpec}=create_sim_connect_node_test(),
-    {ok,PodNode,PodDir}= ops_pod:create(SimConNode,HostSpec),
-    {ok,pod_app,PodAppDir}= ops_pod:load_start(PodNode,PodDir),
-    {ok,test_add,TestAddDir}= ops_pod:load_start(PodNode,PodDir,"adder"),
-    {ok,db_etcd_app,DbEtcdDir}= ops_pod:load_start(PodNode,PodDir,"db_etcd_app"),
-    
- %% resource_discovery
-    pong=rpc:call(PodNode,db_etcd,ping,[]),
-    pong=rpc:call(PodNode,common,ping,[]),
-    pong=rpc:call(PodNode,rd,ping,[]),
-   
-    42=rpc:call(PodNode,rd,rpc_call,[adder,test_add,add,[20,22]]),
-    {error,[eexists_resources]}=rpc:call(PodNode,rd,rpc_call,[glurk,test_add,add,[20,22]]),
-     
+    {ok,SimConNode}=create_sim_connect_node_test(),
+    {ok,PodNode,PodDir}= create_pod_test(SimConNode),
+    ok=load_start_pod_appl(PodNode,PodDir),
+    ok= load_start_appl(PodNode,PodDir),
+  
+
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
 
     ok.
 
 
-%% --------------------------------------------------------------------
-%% Function: available_hosts()
-%% Description: Based on hosts.config file checks which hosts are avaible
-%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
-%% --------------------------------------------------------------------
-create_sim_connect_node_test()->
-    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    
-    %create a pod at c200 connect node 
-    HostSpec="c50",
-    Cookie=atom_to_list(erlang:get_cookie()),
-    {ok,HostName}=inet:gethostname(),
-    ClusterSpec="sim_con",
-    {ok,SimConNode}=slave:start(HostName,ClusterSpec++"_connect"," -setcookie "++Cookie),
-    pong=net_adm:ping(SimConNode),
-  
-    io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    {ok,SimConNode,HostSpec}.
 
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
@@ -87,7 +59,15 @@ load_start_appl(PodNode,PodDir)->
     ok=appl:load(PodNode,test_add,[ApplDir,ApplEbin]),
     ok=appl:start(PodNode,test_add),
 
-   
+    %% resource_discovery
+    ok=rpc:call(PodNode,rd,add_local_resource,[math_add,PodNode],5000),
+    ok=rpc:call(PodNode,rd,add_target_resource_type,[math_add],5000),
+    ok=rpc:call(PodNode,rd,trade_resources,[],5000),
+    timer:sleep(2000),
+
+    42=rpc:call(PodNode,rd,rpc_call,[math_add,test_add,add,[20,22]]),
+    {error,[eexists_resources]}=rpc:call(PodNode,rd,rpc_call,[glurk,test_add,add,[20,22]]),
+     
 
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
     ok.
@@ -118,7 +98,23 @@ load_start_pod_appl(PodNode,PodDir)->
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
     ok.
     
-
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% --------------------------------------------------------------------
+create_sim_connect_node_test()->
+    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
+    
+    %create a pod at c200 connect node 
+    Cookie=atom_to_list(erlang:get_cookie()),
+    {ok,HostName}=inet:gethostname(),
+    ClusterSpec="many_c200_c201",
+    {ok,SimConNode}=slave:start(HostName,ClusterSpec++"_connect"," -setcookie "++Cookie),
+    pong=net_adm:ping(SimConNode),
+  
+    io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
+    {ok,SimConNode}.
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
 %% Description: Based on hosts.config file checks which hosts are avaible

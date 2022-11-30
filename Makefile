@@ -7,6 +7,7 @@ all:
 	rm -rf tests_ebin
 	rm -rf ebin;
 	rm -rf Mnesia.*;
+	rm -rf *.dir;
 	rm -rf _build;
 	mkdir ebin;
 	rebar3 compile;	
@@ -42,7 +43,7 @@ clean:
 	rm -rf ebin;
 	rm -rf Mnesia.*;
 	rm -rf _build;	
-	rm -rf Mnesia.*
+	rm -rf *.dir
 
 eunit:
 	rm -rf  *~ */*~ src/*.beam tests/*.beam
@@ -54,6 +55,7 @@ eunit:
 	rm -rf tests_ebin
 	rm -rf ebin;
 	rm -rf Mnesia.*;
+	rm -rf *.dir;
 #	tests 
 	mkdir tests_ebin;
 	erlc -I include -o tests_ebin tests/*.erl;

@@ -93,7 +93,7 @@ delete(ControllerNode,PodeNode,PodDir)->
 %% -------------------------------------------------------------------
 create(HostName,ControllerNode,PodNodeName,PodDir,Cookie)->
     Args=" -setcookie "++Cookie,
-    Result=case rpc:call(ControllerNode,slave,start,[HostName,PodNodeName,Args],5000) of
+    Result=case rpc:call(ControllerNode,slave,start,[HostName,PodNodeName,Args],?TimeOut) of
 	       {badrpc,Reason}->
 		   {error,[badrpc,Reason,?MODULE,?FUNCTION_NAME,?LINE]};
 	       {error,Reason}->

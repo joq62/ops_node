@@ -8,6 +8,6 @@
               {modules,[ops_application_controller_server,
                         ops_cluster_controller_server,ops_db_etcd,ops_install,
                         ops_node,ops_node_app,ops_node_server,ops_node_sup,
-                        ops_ssh,ops_vm]},
+                        ops_pod,ops_ssh,ops_vm]},
               {licenses,["Apache 2.0"]},
               {links,[]}]}.

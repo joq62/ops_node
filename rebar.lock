@@ -4,7 +4,7 @@
   0},
  {<<"db_etcd">>,
   {git,"https://github.com/joq62/db_etcd.git",
-       {ref,"17e671dd0818439ad75534c60ade5c44b47ae8b0"}},
+       {ref,"4e4d6379a8428f2e4f5c846aa9c684e7bc2612c7"}},
   0},
  {<<"nodelog">>,
   {git,"https://github.com/joq62/nodelog.git",
@@ -12,5 +12,5 @@
   0},
  {<<"resource_discovery">>,
   {git,"https://github.com/joq62/resource_discovery.git",
-       {ref,"9c24e69f6840dd4b67b6d8753e5b31f89606bf5c"}},
+       {ref,"255b8277f58037b65e023ffee6aaf0a59f6b0156"}},
   0}].
