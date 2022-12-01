@@ -168,7 +168,7 @@ handle_cast(Msg, State) ->
 %% --------------------------------------------------------------------
 
 handle_info(timeout, State) -> %% Initil start - kick orchestration 
-    io:format("timeout ~p~n",[{?MODULE,?LINE}]), 
+ %   io:format("timeout ~p~n",[{?MODULE,?LINE}]), 
     [rd:add_local_resource(Type,Instance)||{Type,Instance}<-?LocalResources],
     [rd:add_target_resource_type(Type)||Type<-?Target],
     rd:trade_resources(),

@@ -102,7 +102,7 @@ create(HostName,ControllerNode,PodNodeName,PodDir,Cookie)->
 		   case rpc:call(PodNode,file,make_dir,[PodDir],5000) of
 		       {error,Reason}->
 			   {error,[Reason,?MODULE,?FUNCTION_NAME,?LINE]};
-		       ok-> % Git clone controller_app
+		       ok-> 
 			   case rpc:call(ControllerNode,net_kernel,connect_node,[PodNode],5000) of
 			       {badrpc,Reason}->
 				   {error,[badrpc,Reason,?MODULE,?FUNCTION_NAME,?LINE]};

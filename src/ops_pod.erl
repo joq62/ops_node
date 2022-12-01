@@ -12,11 +12,14 @@
 -module(ops_pod).   
  
 -export([
-	 create/2,
-	 create/4,
+	 create/3,
+	 create/5,
 	 delete/3,
 	 load_start/2,
 	 load_start/3,
+	 ssh_delete/3,
+	 ssh_create/7,
+	 ssh_create/8,
 	 present/1
 	]).
 		 
@@ -31,17 +34,18 @@
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% ------------------------------------------------------------------
-create(ConnectNode,HostSpec)->
+create(ConnectNode,RootDir,HostSpec)->
     
     PodName=erlang:integer_to_list(os:system_time(microsecond),36)++"_pod",
     PodDir=PodName++".dir",
-    create(ConnectNode,HostSpec,PodName,PodDir).
+    FullPathPodDir=filename:join(RootDir,PodDir),
+    create(ConnectNode,HostSpec,PodName,FullPathPodDir).
     
-create(ConnectNode,HostSpec,PodName,PodDir)->
+create(ConnectNode,HostSpec,PodName,FullPathPodDir)->
     Cookie=atom_to_list(rpc:call(ConnectNode,erlang,get_cookie,[])),
-    os:cmd("rm -rf "++PodDir),
+    rpc:call(ConnectNode,os,cmd,["rm -rf "++FullPathPodDir]),
     {ok,HostName}=db_host_spec:read(hostname,HostSpec),
-    ops_vm:create(HostName,ConnectNode,PodName,PodDir,Cookie).
+    ops_vm:create(HostName,ConnectNode,PodName,FullPathPodDir,Cookie).
 
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
@@ -62,9 +66,9 @@ load_start(PodNode,PodDir,Appl)->
     {ok,GitPath}=db_appl_spec:read(gitpath,Appl),
     ApplDir=filename:join(PodDir,Appl),
     ApplEbin=filename:join(ApplDir,"ebin"),
-    ok=file:make_dir(ApplDir),
+    ok=rpc:call(PodNode,file,make_dir,[ApplDir],10000),
     {ok,_}=appl:git_clone_to_dir(PodNode,GitPath,ApplDir),
-    ok=appl:load(PodNode,App,[ApplDir,ApplEbin]),
+    ok=appl:load(PodNode,App,[ApplEbin]),
     ok=appl:start(PodNode,App),
 
 

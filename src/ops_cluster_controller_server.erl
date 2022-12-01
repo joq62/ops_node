@@ -16,13 +16,13 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
--define(HeartbeatTime,60*1000).
+-define(HeartbeatTime,20*1000).
 
 %% External exports
 -export([
 	 connect_nodes/1,
 	 initiate/0,
-	 heartbeat/0,
+	 heartbeat/1,
 	 ping/0
 	]).
 
@@ -48,7 +48,8 @@
 	       connect_host_specs,
 	       connect_nodename,
 	       connect_nodes_info,
-	       cluster_dir
+	       cluster_dir,
+	       current_cluster_state	       
 	      }).
 
 
@@ -65,8 +66,8 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 ping() ->
     gen_server:call(?MODULE, {ping}).
 %% cast
-heartbeat()-> 
-    gen_server:cast(?MODULE, {heartbeat}).
+heartbeat(Status)-> 
+    gen_server:cast(?MODULE, {heartbeat,Status}).
 initiate()-> 
     gen_server:cast(?MODULE, {initiate}).
 
@@ -85,7 +86,7 @@ initiate()->
 init([]) -> 
     io:format("Started Server ~p~n",[{?MODULE,?LINE}]),
 
-    {ok, #state{}}.   
+    {ok, #state{current_cluster_state=n_a}}.   
  
 
 %% --------------------------------------------------------------------
@@ -139,16 +140,40 @@ handle_cast({initiate}, State) ->
 			     connect_nodename=ConnectNodeName,
 			     connect_host_specs=ConnectHostSpecs,
 			     connect_nodes_info=ConnectNodesInfo,
-			     cluster_dir=ClusterDir},
+			     cluster_dir=ClusterDir,
+			     current_cluster_state=[{present,[na]},{missing,[na]}]
+			    },
   %  gl=InitialState,
-    ?MODULE:heartbeat(),
+    rpc:cast(node(),?MODULE,heartbeat,[InitialState#state.current_cluster_state]),
     {noreply,InitialState};
 
 
-handle_cast({heartbeat}, State) ->
-    io:format("  ~p~n",[{heartbeat,?MODULE,?LINE}]), 
-    spawn(fun()->hbeat(State) end),
-    {noreply, State};
+handle_cast({heartbeat,Status}, State) ->
+    [{present,CurrentPresent},{missing,CurrentMissing}]=State#state.current_cluster_state,
+    [{present,NewPresent},{missing,NewMissing}]=Status,
+    
+    NoChangeStatus=lists:sort(NewPresent) =:= lists:sort(CurrentPresent),
+    case NoChangeStatus of
+	false->
+	    io:format("INFO: cluster state changed  ~p~n",[{date(),time()}]),  
+	    CurrentPresentNodes=[Node||{_HostName,_NodeName,Node}<-CurrentPresent],
+	    CurrentMissingNodes=[Node||{_HostName,_NodeName,Node}<-CurrentMissing],  
+	    PresentNodes=[Node||{_HostName,_NodeName,Node}<-NewPresent],
+	    MissingNodes=[Node||{_HostName,_NodeName,Node}<-NewMissing],  
+
+	    io:format("INFO:CurrentPresentNodes ~p~n",[CurrentPresentNodes]),   
+	    io:format("INFO:CurrentMissingNodes ~p~n",[CurrentMissingNodes]),
+	  
+	    io:format("INFO:NewPresentNodes ~p~n",[PresentNodes]),   
+	    io:format("INFO:NewMissingNodes ~p~n",[MissingNodes]);
+	true->
+	    ok
+    end,
+
+    NewState=State#state{current_cluster_state=Status},
+  
+    spawn(fun()->hbeat(NewState) end),
+    {noreply, NewState};
 
 handle_cast(Msg, State) ->
     io:format("unmatched match cast ~p~n",[{Msg,?MODULE,?LINE}]),
@@ -185,11 +210,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %% --------------------------------------------------------------------
 hbeat(State)->
-    ConnectResult=rpc:call(node(),?MODULE,connect_nodes,[State],20*1000),
-    io:format("ConnectResult ~p~n",[{ConnectResult,?MODULE,?LINE}]), 
-  
     timer:sleep(?HeartbeatTime),
-    rpc:cast(node(),?MODULE,heartbeat,[]).
+    Status=case rpc:call(node(),?MODULE,connect_nodes,[State],60*1000) of 
+	       {badrpc,_}->
+		   Present=[{HostName,NodeName,Node}||{HostName,NodeName,Node}<-State#state.connect_nodes_info,
+						      true=:=ops_vm:present(Node)],
+		   Missing=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
+				      false=:=lists:member(NodeInfo,Present)], 
+		   
+		   [{present,Present},{missing,Missing}];
+	       S->
+		   S
+	   end,
+    
+    rpc:cast(node(),?MODULE,heartbeat,[Status]).
 
 
 
@@ -203,34 +237,40 @@ hbeat(State)->
 connect_nodes(State)->
     Present=[{HostName,NodeName,Node}||{HostName,NodeName,Node}<-State#state.connect_nodes_info,
 				       true=:=ops_vm:present(Node)],
-    io:format("Present ~p~n",[{Present,?MODULE,?LINE}]), 
-    MissingNodes=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
-			    false=:=lists:member(NodeInfo,Present)],
-    io:format("MissingNodes ~p~n",[{MissingNodes,?MODULE,?LINE}]), 
-    NodeDir=State#state.cluster_dir,
+    Missing=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
+			    false=:=lists:member(NodeInfo,Present)],    
+    ControllerHostSpecs=State#state.controller_host_specs,
+    ClusterDir=State#state.cluster_dir,
     Cookie=State#state.cookie,
-    PaArgs=" -pa "++NodeDir,
+    PaArgs=" ",
     EnvArgs=" -detached ",
     NodesToConnect=[Node||{_HostName,_NodeName,Node}<-State#state.connect_nodes_info],
-    create_connect_nodes(MissingNodes,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[]).
+    create_connect_nodes(Missing,ControllerHostSpecs,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[]),
+    UpdatedPresent=[{HostName,NodeName,Node}||{HostName,NodeName,Node}<-State#state.connect_nodes_info,
+				       true=:=ops_vm:present(Node)],
+    UpdatedMissing=[NodeInfo||NodeInfo<-State#state.connect_nodes_info,
+			    false=:=lists:member(NodeInfo,UpdatedPresent)],    
+    [{present,UpdatedPresent},{missing,UpdatedMissing}].
     
 
-create_connect_nodes([],_NodeDir,_Cookie,_PaArgs,_EnvArgs,_NodesToConnect,Acc)->
+create_connect_nodes([],_ControllerHostSpecs,_ClusterDir,_Cookie,_PaArgs,_EnvArgs,_NodesToConnect,Acc)->
     Acc;
 
-create_connect_nodes([{HostName,NodeName,_Node}|T],NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,Acc)->
-    HostSpec=HostName, %% shall be changed!!!!!!!!!!!!!!!!!
-    {ok,ConnectNode,_,_}=ops_vm:ssh_create(HostName,NodeName,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
-
-    io:format("ConnectNode  ~p~n",[{ConnectNode,?MODULE,?LINE}]), 
-    {ok,PodNode,PodDir}= ops_pod:create(ConnectNode,HostSpec),
-    io:format("PodNode,PodDir  ~p~n",[{PodNode,PodDir,?MODULE,?LINE}]), 
-
-    {ok,pod_app,PodAppDir}= ops_pod:load_start(PodNode,PodDir),
-    {ok,db_etcd_app,DbEtcdDir}= ops_pod:load_start(PodNode,PodDir,"db_etcd_app"),
-   
-    io:format("HostSpec,ConnectNode  ~p~n",[{HostSpec,ConnectNode,?MODULE,?LINE}]), 
-    create_connect_nodes(T,NodeDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[{ConnectNode,PodNode,PodDir}|Acc]).
+create_connect_nodes([{HostName,NodeName,_Node}|T],ControllerHostSpecs,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,Acc)->
+    
+    
+    {ok,ConnectNode,ClusterDir,_}=ops_vm:ssh_create(HostName,NodeName,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut),
+    io:format("INFO: Creating Connect Nodes and Ops Pod   ~p~n",[{date(),time()}]),
+    io:format("INFO:ConnectNode created  ~p~n",[ConnectNode]),    
+    [HostSpec]=[HostSpec||HostSpec<-ControllerHostSpecs,
+			  {ok,HostName}=:=db_host_spec:read(hostname,HostSpec)],
+    {ok,PodNode,PodDir}=ops_pod:create(ConnectNode,ClusterDir,HostSpec),
+    io:format("INFO:Pod created  ~p~n",[PodNode]),    
+    {ok,pod_app,_PodAppDir}= ops_pod:load_start(PodNode,PodDir,"pod_app"),
+    io:format("INFO:Load_Start Application in Pod   ~p~n",[{pod_app,PodNode}]),    
+    {ok,db_etcd_app,_DbEtcdDir}= ops_pod:load_start(PodNode,PodDir,"db_etcd_app"),
+    io:format("INFO:Load_Start Application in Pod   ~p~n",[{db_etcd_app,PodNode}]),    
+    create_connect_nodes(T,ControllerHostSpecs,ClusterDir,Cookie,PaArgs,EnvArgs,NodesToConnect,[{ConnectNode,PodNode,PodDir}|Acc]).
 
 
 %cluster_deployment,
