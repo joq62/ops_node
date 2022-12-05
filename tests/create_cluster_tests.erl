@@ -76,20 +76,24 @@ load_spec_test()->
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% --------------------------------------------------------------------
--define(ClusterDeployment,"many_c200_c201").
+-define(ClusterSpec,"c200_c201").
 setup()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
         
-    AppEnv=[{ops_node,[{cluster_deployment,?ClusterDeployment}]}],
-    Cookie=list_to_atom("cookie_"++?ClusterDeployment),
+    AppEnv=[{ops_node,[{cluster_spec,?ClusterSpec}]}],
+    Cookie=list_to_atom("cookie_"++?ClusterSpec),
     erlang:set_cookie(node(),Cookie),
-    ConnectNodes=[list_to_atom(?ClusterDeployment++"_connect_node@c200"),
-		  list_to_atom(?ClusterDeployment++"_connect_node@c201")],
+    ConnectNodes=[list_to_atom("controller@c200"),
+		  list_to_atom("controller@c201")],
     [rpc:call(ConnectNode,init,stop,[])||ConnectNode<-ConnectNodes],
+    
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
     pong=ops_node:ping(),
-    pong=ops_cluster_controller_server:ping(),
+    pong=db_etcd:ping(),
+%   io:format("setup  ~p~n",[{?MODULE,?LINE}]),
+%    pong=ops_cluster_controller_server:ping(),
+ %  kuk= io:format("setup  ~p~n",[{?MODULE,?LINE}]),
     pong=ops_application_controller_server:ping(),
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),

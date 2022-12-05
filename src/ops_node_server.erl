@@ -38,7 +38,7 @@
 
 %%-------------------------------------------------------------------
 
--record(state,{cluster_deployment_spec
+-record(state,{cluster_spec
 	     	      
 	      }).
 
@@ -70,13 +70,13 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 %% --------------------------------------------------------------------
 init([]) ->
     AllEnvs=application:get_all_env(),
-    {cluster_deployment,ClusterDeploymentSpec}=lists:keyfind(cluster_deployment,1,AllEnvs),
+    {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
     db_etcd:install(),
-    {ok,Cookie}=db_cluster_deployment:read(cookie,ClusterDeploymentSpec),
+    {ok,Cookie}=db_cluster_spec:read(cookie,ClusterSpec),
         
     erlang:set_cookie(node(), list_to_atom(Cookie)),
         
-    {ok, #state{cluster_deployment_spec=ClusterDeploymentSpec},0}.   
+    {ok, #state{cluster_spec=ClusterSpec},0}.   
  
 
 %% --------------------------------------------------------------------
@@ -131,8 +131,8 @@ handle_call({cluster_application_deployments,
 						       X_ClusterSpec=:=ClusterSpec],
     {reply, Reply, State};
 
-handle_call({cluster_deployment_spec},_From, State) ->
-    Reply=State#state.cluster_deployment_spec,
+handle_call({cluster_spec},_From, State) ->
+    Reply=State#state.cluster_spec,
     {reply, Reply, State};
 
 

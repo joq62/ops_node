@@ -107,13 +107,14 @@ delete_dir(HostSpec,Dir)->
     {ok,Pwd}=db_host_spec:read(passwd,HostSpec),
     TimeOut=5000,
     my_ssh:ssh_send(Ip,SshPort,Uid,Pwd,"rm -rf "++Dir,TimeOut),
-    case ops_ssh:is_dir(HostName,Dir) of
-	false->
-	    {ok,Dir};
-	true ->
-	    {error,["failed to delete ",HostName,Dir,?MODULE,?FUNCTION_NAME,?LINE]}
-    end.
-
+    
+%    case ops_ssh:is_dir(HostName,Dir) of
+%	false->
+%	    {ok,Dir};
+%	true ->
+%	    {error,["failed to delete ",HostName,Dir,?MODULE,?FUNCTION_NAME,?LINE]}
+ %   end.
+    {ok,Dir}.
 %% --------------------------------------------------------------------
 %% Function:start/0 
 %% Description: Initiate the eunit tests, set upp needed processes etc
@@ -126,9 +127,10 @@ create_dir(HostSpec,Dir)->
     {ok,Pwd}=db_host_spec:read(passwd,HostSpec),
     TimeOut=5000,
     my_ssh:ssh_send(Ip,SshPort,Uid,Pwd,"rm -rf "++Dir,TimeOut),
-    my_ssh:ssh_send(Ip,SshPort,Uid,Pwd,"mkdir "++Dir,TimeOut),
     timer:sleep(2000),
-    case ssh_vm:is_dir(Dir,{Ip,SshPort,Uid,Pwd,TimeOut}) of
+    my_ssh:ssh_send(Ip,SshPort,Uid,Pwd,"mkdir "++Dir,TimeOut),
+    timer:sleep(5000),
+    case ops_ssh:is_dir(Dir,{Ip,SshPort,Uid,Pwd,TimeOut}) of
 	true->
 	    {ok,Dir};
 	false ->
