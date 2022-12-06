@@ -58,12 +58,12 @@ setup()->
     
     ok=application:set_env(AppEnv),
     ok=application:start(ops_node),
-    pong=ops_node:ping(),
-    pong=db_etcd:ping(),
+ %   pong=ops_node:ping(),
+  %  pong=db_etcd:ping(),
 %   io:format("setup  ~p~n",[{?MODULE,?LINE}]),
 %    pong=ops_cluster_controller_server:ping(),
  %  kuk= io:format("setup  ~p~n",[{?MODULE,?LINE}]),
-    pong=ops_application_controller_server:ping(),
+  %  pong=ops_application_controller_server:ping(),
     
     io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
 

@@ -174,6 +174,7 @@ handle_info(timeout, State) -> %% Initil start - kick orchestration
     rd:trade_resources(),
     timer:sleep(3000),
     ok=ops_connect_operator_server:initiate(),
+    ok=ops_controller_operator_server:initiate(),
     
     {noreply, State};
 

@@ -7,7 +7,7 @@
 %%% 
 %%% Created : 10 dec 2012
 %%% -------------------------------------------------------------------
--module(ops_connect_operator_server).
+-module(ops_controller_operator_server).
  
 -behaviour(gen_server).
 
@@ -66,6 +66,8 @@ ping() ->
 %% cast
 heartbeat(Status)-> 
     gen_server:cast(?MODULE, {heartbeat,Status}).
+
+
 initiate()-> 
     gen_server:call(?MODULE, {initiate},infinity).
 
@@ -114,11 +116,9 @@ handle_call({initiate},_From, State) ->
     ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
     {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
 					 [controller_host_specs,ClusterSpec],5000),
-    {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
-				     [worker_host_specs,ClusterSpec],5000),
-    ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
     InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
-    _InitialResult=create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs),
+    
+   _InitialResult=create_controller_nodes(InstanceId,ClusterSpec,ControllerHostSpecs),
     
     PresentConnectNodes=present_connect_nodes(InstanceId),
     MissingConnectNodes=missing_connect_nodes(InstanceId),
@@ -133,6 +133,7 @@ handle_call({initiate},_From, State) ->
     rpc:cast(node(),?MODULE,heartbeat,[{PresentConnectNodes,MissingConnectNodes}]),
     Reply=ok,
     {reply, Reply, InitialState};
+
 
 handle_call(Request, From, State) ->
     Reply = {unmatched_signal,?MODULE,Request,From},
@@ -152,11 +153,9 @@ handle_cast({initiate}, State) ->
     ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
     {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
 					 [controller_host_specs,ClusterSpec],5000),
-    {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
-				     [worker_host_specs,ClusterSpec],5000),
-    ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
     InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
-    _InitialResult=create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs),
+    
+   _InitialResult=create_controller_nodes(InstanceId,ClusterSpec,ControllerHostSpecs),
     
     PresentConnectNodes=present_connect_nodes(InstanceId),
     MissingConnectNodes=missing_connect_nodes(InstanceId),
@@ -253,7 +252,7 @@ hbeat(InstanceId,ClusterSpec)->
 wanted_state(InstanceId,ClusterSpec)->
     NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
     MissingConnectNodes=missing_connect_nodes(InstanceId),
-    [create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes],
+    [create_controller_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes],
     {present_connect_nodes(InstanceId),missing_connect_nodes(InstanceId)}.
 
 %% --------------------------------------------------------------------
@@ -262,26 +261,26 @@ wanted_state(InstanceId,ClusterSpec)->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 missing_connect_nodes(InstanceId)->
-    [Node||Node<-db_cluster_instance:nodes(connect,InstanceId), 
+    [Node||Node<-db_cluster_instance:nodes(controller,InstanceId), 
 	   pang=:=net_adm:ping(Node)].
 present_connect_nodes(InstanceId)->
-    [Node||Node<-db_cluster_instance:nodes(connect,InstanceId), 
+    [Node||Node<-db_cluster_instance:nodes(controller,InstanceId), 
 	   pong=:=net_adm:ping(Node)].
 %% --------------------------------------------------------------------
 %% Function: terminate/2
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
-create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs)->
-    DbaseInfo=connect_dbase_info(ConnectHostSpecs,InstanceId,ClusterSpec,[]),
+create_controller_nodes(InstanceId,ClusterSpec,ControllerHostSpecs)->
+    DbaseInfo=controller_dbase_info(ControllerHostSpecs,InstanceId,ClusterSpec,[]),
     io:format("DbaseInfo ~p~n",[{DbaseInfo,?MODULE,?LINE,?FUNCTION_NAME}]),
-    NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
+    NodesToConnect=db_cluster_instance:nodes(controller,InstanceId),
     MissingConnectNodes=[Node||Node<-NodesToConnect, 
 			       pang=:=net_adm:ping(Node)],
-    [create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes].
+    [create_controller_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes].
     
 
-create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)->
+create_controller_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)->
     io:format("INFO: create new/restart connect_node  ~p~n",[{date(),time()}]), 
     io:format("INFO: Cluster and PodNode   ~p~n",[{ClusterSpec,PodNode}]),  
     
@@ -301,21 +300,28 @@ create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 
-connect_dbase_info([],_ClusterInstanceId,_ClusterSpec,Acc)->
+controller_dbase_info([],_ClusterInstanceId,_ClusterSpec,Acc)->
     Acc;
-connect_dbase_info([HostSpec|T],ClusterInstanceId,ClusterSpec,Acc)->
+controller_dbase_info([HostSpec|T],ClusterInstanceId,ClusterSpec,Acc)->
     {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_spec,read,[dir,ClusterSpec],5000),
     {ok,HostName}=rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000),
-    PodName=ClusterSpec++"_connect",
-    PodNode=list_to_atom(PodName++"@"++HostName),
-    PodDir=ClusterDir,
-    Type=connect,
-    Status=candidate,
-    NewAcc=case db_cluster_instance:create(ClusterInstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status) of
-	       {atomic,ok}->
-		   [ok|Acc];
-	       Reason->
-		   [{error,[Reason]}|Acc]
+    NewAcc=case rd:rpc_call(db_etcd,db_cluster_instance,pod_based_host_spec,[HostSpec,connect,ClusterInstanceId],5000) of
+	       []->
+		   {error,[no_connect_node,HostSpec]};
+	       [ConnectNode]->
+		   UniqueId=rpc:call(ConnectNode,os,system_time,[microsecond],5000),
+		   PodName=erlang:integer_to_list(UniqueId,36)++"_"++ClusterSpec++"_controller",
+		   PodNode=list_to_atom(PodName++"@"++HostName),
+		   PodDirName=PodName++".dir",
+		   PodDir=filename:join(ClusterDir,PodDirName),
+		   Type=controller,
+		   Status=candidate,
+		   case db_cluster_instance:create(ClusterInstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status) of
+		       {atomic,ok}->
+			   [ok|Acc];
+		       Reason->
+			   [{error,[Reason]}|Acc]
+		   end
 	   end,
-    connect_dbase_info(T,ClusterInstanceId,ClusterSpec,NewAcc).
+    controller_dbase_info(T,ClusterInstanceId,ClusterSpec,NewAcc).
      

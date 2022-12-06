@@ -41,6 +41,8 @@ init([]) ->
 	%	     start=>{ops_cluster_controller_server,start,[]}},	
 		   #{id=>ops_connect_operator,
 		     start=>{ops_connect_operator_server,start,[]}},
+		   #{id=>ops_controller_operator,
+		     start=>{ops_controller_operator_server,start,[]}},
 		   #{id=>ops_application_controller,
 		     start=>{ops_application_controller_server,start,[]}},		 
 		   #{id=>ops_node,
