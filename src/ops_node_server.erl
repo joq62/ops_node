@@ -17,7 +17,7 @@
 
 %% --------------------------------------------------------------------
 -define(LocalResources,[{db_etcd,node()},{nodelog,node()}]).
--define(Target,[db_etcd,nodelog]).
+-define(Target,[pod_app,db_etcd,nodelog]).
 
 %% External exports
 -export([
@@ -173,8 +173,10 @@ handle_info(timeout, State) -> %% Initil start - kick orchestration
     [rd:add_target_resource_type(Type)||Type<-?Target],
     rd:trade_resources(),
     timer:sleep(3000),
-    ok=ops_connect_operator_server:initiate(),
-    ok=ops_controller_operator_server:initiate(),
+    ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
+    InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
+    ok=ops_connect_operator_server:initiate(InstanceId),
+    ok=ops_pod_operator_server:initiate(InstanceId),
     
     {noreply, State};
 

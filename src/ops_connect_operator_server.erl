@@ -22,7 +22,7 @@
 -export([
 	 wanted_state/2,
 	 
-	 initiate/0,
+	 initiate/1,
 	 heartbeat/1,
 	 ping/0
 	]).
@@ -66,8 +66,8 @@ ping() ->
 %% cast
 heartbeat(Status)-> 
     gen_server:cast(?MODULE, {heartbeat,Status}).
-initiate()-> 
-    gen_server:call(?MODULE, {initiate},infinity).
+initiate(InstanceId)-> 
+    gen_server:call(?MODULE, {initiate,InstanceId},infinity).
 
 %% ====================================================================
 %% Server functions
@@ -108,7 +108,7 @@ handle_call({ping},_From, State) ->
     Reply=pong,
     {reply, Reply, State};
 
-handle_call({initiate},_From, State) ->
+handle_call({initiate,InstanceId},_From, State) ->
     AllEnvs=application:get_all_env(),
     {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
     ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
@@ -117,8 +117,7 @@ handle_call({initiate},_From, State) ->
     {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
 				     [worker_host_specs,ClusterSpec],5000),
     ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
-    InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
-    _InitialResult=create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs),
+      _InitialResult=create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs),
     
     PresentConnectNodes=present_connect_nodes(InstanceId),
     MissingConnectNodes=missing_connect_nodes(InstanceId),
@@ -205,7 +204,7 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_info({ssh_cm,_,{closed,0}}, State) ->
+handle_info({ssh_cm,_,_}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->

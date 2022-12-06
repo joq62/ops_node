@@ -111,7 +111,7 @@ handle_call({ping},_From, State) ->
 handle_call({initiate},_From, State) ->
     AllEnvs=application:get_all_env(),
     {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
-    ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
+
     {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
 					 [controller_host_specs,ClusterSpec],5000),
     InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
