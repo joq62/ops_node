@@ -23,7 +23,7 @@
 	 wanted_state/2,
 	 
 	 initiate/1,
-	 heartbeat/1,
+	 heartbeat/0,
 	 ping/0
 	]).
 
@@ -64,8 +64,8 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 ping() ->
     gen_server:call(?MODULE, {ping}).
 %% cast
-heartbeat(Status)-> 
-    gen_server:cast(?MODULE, {heartbeat,Status}).
+heartbeat()-> 
+    gen_server:cast(?MODULE, {heartbeat}).
 initiate(InstanceId)-> 
     gen_server:call(?MODULE, {initiate,InstanceId},infinity).
 
@@ -129,7 +129,7 @@ handle_call({initiate,InstanceId},_From, State) ->
 			     missing_connect_nodes=MissingConnectNodes,
 			     present_connect_nodes=PresentConnectNodes
 			    },
-    rpc:cast(node(),?MODULE,heartbeat,[{PresentConnectNodes,MissingConnectNodes}]),
+    rpc:cast(node(),?MODULE,heartbeat,[]),
     Reply=ok,
     {reply, Reply, InitialState};
 
@@ -172,7 +172,11 @@ handle_cast({initiate}, State) ->
     {noreply,InitialState};
 
 
-handle_cast({heartbeat,{NewPresentConnectNodes,NewMissingConnectNodes}}, State) ->
+handle_cast({heartbeat}, State) ->
+    NewPresentConnectNodes=present_connect_nodes(State#state.instance_id),
+    NewMissingConnectNodes=missing_connect_nodes(State#state.instance_id),
+   
+    
     NoChangeStatus=lists:sort(NewPresentConnectNodes) =:= lists:sort(State#state.present_connect_nodes),
     case NoChangeStatus of
 	false->
@@ -231,9 +235,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %% --------------------------------------------------------------------
 hbeat(InstanceId,ClusterSpec)->
-    timer:sleep(?HeartbeatTime),
-    {Present,Missing}=rpc:call(node(),?MODULE,wanted_state,[InstanceId,ClusterSpec],30*1000), 
-    rpc:cast(node(),?MODULE,heartbeat,[{Present,Missing}]).
+    rpc:call(node(),?MODULE,wanted_state,[InstanceId,ClusterSpec],30*1000), 
+    rpc:cast(node(),?MODULE,heartbeat,[]).
 
 
 
@@ -253,7 +256,7 @@ wanted_state(InstanceId,ClusterSpec)->
     NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
     MissingConnectNodes=missing_connect_nodes(InstanceId),
     [create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes],
-    {present_connect_nodes(InstanceId),missing_connect_nodes(InstanceId)}.
+    ok.
 
 %% --------------------------------------------------------------------
 %% Function: terminate/2

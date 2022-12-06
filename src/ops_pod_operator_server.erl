@@ -23,7 +23,7 @@
 	 wanted_state/2,
 	 
 	 initiate/1,
-	 heartbeat/1,
+	 heartbeat/0,
 	 ping/0
 	]).
 
@@ -64,8 +64,8 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 ping() ->
     gen_server:call(?MODULE, {ping}).
 %% cast
-heartbeat(Status)-> 
-    gen_server:cast(?MODULE, {heartbeat,Status}).
+heartbeat()-> 
+    gen_server:cast(?MODULE, {heartbeat}).
 initiate(InstanceId)-> 
     gen_server:call(?MODULE, {initiate,InstanceId},infinity).
 
@@ -145,8 +145,7 @@ handle_call({initiate,InstanceId},_From, State) ->
 			     present_worker_nodes=PresentWorkerNodes,
 			     missing_worker_nodes=MissingWorkerNodes
 			    },
-    rpc:cast(node(),?MODULE,heartbeat,[{PresentControllerNodes,MissingControllerNodes,
-					PresentWorkerNodes,MissingWorkerNodes}]),
+    rpc:cast(node(),?MODULE,heartbeat,[]),
     Reply=ok,
     {reply, Reply, InitialState};
 
@@ -162,8 +161,14 @@ handle_call(Request, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 
-handle_cast({heartbeat,{NewPresentControllerNodes,NewMissingControllerNodes,
-			NewPresentWorkerNodes,NewMissingWorkerNodes}}, State) ->
+handle_cast({heartbeat}, State) ->
+
+    NewPresentControllerNodes=present_controller_nodes(State#state.instance_id),
+    NewMissingControllerNodes=missing_controller_nodes(State#state.instance_id),
+    NewPresentWorkerNodes=present_worker_nodes(State#state.instance_id),
+    NewMissingWorkerNodes=missing_worker_nodes(State#state.instance_id),
+  
+
     NoChangeStatusController=lists:sort(NewPresentControllerNodes) =:= lists:sort(State#state.present_controller_nodes),
     case NoChangeStatusController of
 	false->
@@ -238,8 +243,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% --------------------------------------------------------------------
 hbeat(InstanceId,ClusterSpec)->
     timer:sleep(?HeartbeatTime),
-    {Present,Missing}=rpc:call(node(),?MODULE,wanted_state,[InstanceId,ClusterSpec],30*1000), 
-    rpc:cast(node(),?MODULE,heartbeat,[{Present,Missing}]).
+    rpc:call(node(),?MODULE,wanted_state,[InstanceId,ClusterSpec],30*1000), 
+    rpc:cast(node(),?MODULE,heartbeat,[]).
 
 
 
@@ -256,11 +261,11 @@ hbeat(InstanceId,ClusterSpec)->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 wanted_state(InstanceId,_ClusterSpec)->
-    _NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
-    _MissingControllerNodes=missing_controller_nodes(InstanceId),
-    _MissingWorkerNodes=missing_worker_nodes(InstanceId),
-  %  [create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes],
-  %  {present_connect_nodes(InstanceId),missing_connect_nodes(InstanceId)}.
+    NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
+    MissingControllerNodes=missing_controller_nodes(InstanceId),
+    MissingWorkerNodes=missing_worker_nodes(InstanceId),
+    [restart_pod(InstanceId,PodNode)||PodNode<-MissingControllerNodes],
+    [restart_pod(InstanceId,PodNode)||PodNode<-MissingWorkerNodes],
     ok.
 
 %% --------------------------------------------------------------------
@@ -291,6 +296,26 @@ present_worker_nodes(InstanceId)->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
+restart_pod(InstanceId,PodNode)->
+    {ok,ClusterSpec}=rd:rpc_call(db_etcd,db_cluster_instance,read,[cluster_spec,InstanceId,PodNode],5000),
+    {ok,HostSpec}=rd:rpc_call(db_etcd,db_cluster_instance,read,[host_spec,InstanceId,PodNode],5000),
+    {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_spec,read,[cookie,ClusterSpec],5000),
+    {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_spec,read,[dir,ClusterSpec],5000),
+    ConnectNodes=rd:rpc_call(db_etcd,db_cluster_instance,nodes,[connect,InstanceId],5000),
+    
+    {ok,HostName}=rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000),
+  %  UniqueId=os:system_time(microsecond),
+  %  PodName=erlang:integer_to_list(UniqueId,36)++"_"++ClusterSpec++"_controller",
+    {ok,PodName}=rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_name,InstanceId,PodNode],5000),
+    rpc:call(PodNode,init,stop,[]),
+    {ok,PodDir}=rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_dir,InstanceId,PodNode],5000),
+    
+    PaArgs=" -detached ",
+    EnvArgs=" ",
+    io:format("INFO: restarts  pod ~p~n",[{PodNode, ?MODULE,?LINE}]),
+    create_pod_node(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut).
+
+
 create_controller_pods(InstanceId,ClusterSpec,NumControllers,ControllerHostSpecs)->
     create_controller_pod(InstanceId,ClusterSpec,NumControllers,ControllerHostSpecs,[]).
 
@@ -313,31 +338,7 @@ create_controller_pod(InstanceId,ClusterSpec,N,[HostSpec|T],Acc) ->
     db_cluster_instance:create(InstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status),
     PaArgs=" -detached ",
     EnvArgs=" ",
-   R=case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut) of
-	  {error,Reason}->
-	      {error,Reason};
-	  {ok,_,_,_}->
-	     ApplSpec="pod_app",
-	     {ok,PodApplGitPath}=rd:rpc_call(db_etcd,db_appl_spec,read,[gitpath,ApplSpec],5000),
-	     ApplDir=filename:join([PodDir,ApplSpec]),
-	     ok=rpc:call(PodNode,file,make_dir,[ApplDir],5000),
-	     {ok,_}=appl:git_clone_to_dir(PodNode,PodApplGitPath,ApplDir),
-	     {ok,PodApp}=rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000),
-	     ApplEbin=filename:join([ApplDir,"ebin"]),
-	     Paths=[ApplEbin],
-	     ok=appl:load(PodNode,PodApp,Paths),
-	     ok=appl:start(PodNode,PodApp),
-	     
-	     % Init 
-	     {ok,LocalTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[local_type,ApplSpec],5000),
-	     {ok,TargetTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[target_type,ApplSpec],5000),
-	     [rpc:call(PodNode,rd,add_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypeList],
-	     [rpc:call(PodNode,rd,add_target_resource_type,[TargetType],5000)||TargetType<-TargetTypeList],
-	     rpc:call(PodNode,rd,trade_resources,[],5000),
-	     timer:sleep(2000),
-	     
-	      ok
-      end,
+    R=create_pod_node(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut),
     RotatedHostSpecList=lists:append(T,[HostSpec]),
     io:format("INFO: Create controller pod ~p~n",[{PodNode, ?MODULE,?LINE}]),
     create_controller_pod(InstanceId,ClusterSpec,N-1,RotatedHostSpecList,[R|Acc]).
@@ -372,32 +373,39 @@ create_worker_pod(InstanceId,ClusterSpec,N,[HostSpec|T],Acc) ->
     db_cluster_instance:create(InstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status),
     PaArgs=" -detached ",
     EnvArgs=" ",
-    R=case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut) of
-	  {error,Reason}->
-	      {error,Reason};
-	  {ok,_,_,_}->
-	      ApplSpec="pod_app",
-	      {ok,PodApplGitPath}=rd:rpc_call(db_etcd,db_appl_spec,read,[gitpath,ApplSpec],5000),
-	      ApplDir=filename:join([PodDir,ApplSpec]),
-	      ok=rpc:call(PodNode,file,make_dir,[ApplDir],5000),
-	      {ok,_}=appl:git_clone_to_dir(PodNode,PodApplGitPath,ApplDir),
-	      {ok,PodApp}=rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000),
-	      ApplEbin=filename:join([ApplDir,"ebin"]),
-	      Paths=[ApplEbin],
-	      ok=appl:load(PodNode,PodApp,Paths),
-	      ok=appl:start(PodNode,PodApp),
-
-	     % Init 
-	      {ok,LocalTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[local_type,ApplSpec],5000),
-	      {ok,TargetTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[target_type,ApplSpec],5000),
-	      [rpc:call(PodNode,rd,add_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypeList],
-	      [rpc:call(PodNode,rd,add_target_resource_type,[TargetType],5000)||TargetType<-TargetTypeList],
-	       rpc:call(PodNode,rd,trade_resources,[],5000),
-	      timer:sleep(2000),
-	      ok
-      end,
+    R=create_pod_node(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut),
     RotatedHostSpecList=lists:append(T,[HostSpec]),
     io:format("INFO: Create worker pod ~p~n",[{PodNode, ?MODULE,?LINE}]),
     create_worker_pod(InstanceId,ClusterSpec,N-1,RotatedHostSpecList,[R|Acc]).
     
-
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%% --------------------------------------------------------------------
+create_pod_node(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,TimeOut)->
+    case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut) of
+	{error,Reason}->
+	    {error,Reason};
+	  {ok,PodNode,_,_}->
+	     ApplSpec="pod_app",
+	    {ok,PodApplGitPath}=rd:rpc_call(db_etcd,db_appl_spec,read,[gitpath,ApplSpec],5000),
+	    ApplDir=filename:join([PodDir,ApplSpec]),
+	    
+	    ok=rpc:call(PodNode,file,make_dir,[ApplDir],5000),
+	    {ok,_}=appl:git_clone_to_dir(PodNode,PodApplGitPath,ApplDir),
+	    {ok,PodApp}=rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000),
+	    ApplEbin=filename:join([ApplDir,"ebin"]),
+	    Paths=[ApplEbin],
+	    ok=appl:load(PodNode,PodApp,Paths),
+	    ok=appl:start(PodNode,PodApp),
+	    
+	     % Init 
+	    {ok,LocalTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[local_type,ApplSpec],5000),
+	    {ok,TargetTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[target_type,ApplSpec],5000),
+	    [rpc:call(PodNode,rd,add_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypeList],
+	    [rpc:call(PodNode,rd,add_target_resource_type,[TargetType],5000)||TargetType<-TargetTypeList],
+	    rpc:call(PodNode,rd,trade_resources,[],5000),
+	    timer:sleep(2000),
+	    ok
+    end.
