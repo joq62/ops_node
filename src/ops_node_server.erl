@@ -173,7 +173,7 @@ handle_info(timeout, State) -> %% Initil start - kick orchestration
     [rd:add_target_resource_type(Type)||Type<-?Target],
     rd:trade_resources(),
     timer:sleep(3000),
-    ok=ops_cluster_controller_server:initiate(),
+    ok=ops_connect_operator_server:initiate(),
     
     {noreply, State};
 

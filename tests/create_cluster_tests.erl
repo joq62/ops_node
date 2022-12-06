@@ -39,37 +39,6 @@ start()->
 %% Description: Based on hosts.config file checks which hosts are avaible
 %% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
 %% --------------------------------------------------------------------
-install_spec_test()->
-    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    
-     
-    io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    ok.
-%% --------------------------------------------------------------------
-%% Function: available_hosts()
-%% Description: Based on hosts.config file checks which hosts are avaible
-%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
-%% --------------------------------------------------------------------
-load_spec_test()->
-    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    
-    LoadResult=db_etcd:load(),
-    {host_spec,Ok,_Err}=lists:keyfind(host_spec,1,LoadResult),
-    true=lists:member("c100.spec",Ok),
-
-    io:format("Stop OK !!! ~p~n",[{?MODULE,?FUNCTION_NAME}]),
-    ok.
-%% --------------------------------------------------------------------
-%% Function: available_hosts()
-%% Description: Based on hosts.config file checks which hosts are avaible
-%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
-%% --------------------------------------------------------------------
-
-%% --------------------------------------------------------------------
-%% Function: available_hosts()
-%% Description: Based on hosts.config file checks which hosts are avaible
-%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
-%% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
@@ -83,8 +52,8 @@ setup()->
     AppEnv=[{ops_node,[{cluster_spec,?ClusterSpec}]}],
     Cookie=list_to_atom("cookie_"++?ClusterSpec),
     erlang:set_cookie(node(),Cookie),
-    ConnectNodes=[list_to_atom("controller@c200"),
-		  list_to_atom("controller@c201")],
+    ConnectNodes=[list_to_atom(?ClusterSpec++"_connect@c200"),
+		  list_to_atom(?ClusterSpec++"_connect@c201")],
     [rpc:call(ConnectNode,init,stop,[])||ConnectNode<-ConnectNodes],
     
     ok=application:set_env(AppEnv),

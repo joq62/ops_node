@@ -21,6 +21,7 @@
 %% External exports
 -export([
 	 wanted_state_controllers/2,
+	 
 	 initiate/0,
 	 heartbeat/1,
 	 ping/0
@@ -44,7 +45,9 @@
 	       cluster_spec,
 	       instance_id,
 	       missing_controllers,
-	       present_controllers
+	       present_controllers,
+	       present_connect_nodes,
+	       missing_connect_nodes
 	      }).
 
 
@@ -121,46 +124,51 @@ handle_cast({initiate}, State) ->
     AllEnvs=application:get_all_env(),
     {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
     ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
-    {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
+     {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
 					 [controller_host_specs,ClusterSpec],5000),
+    {ok,WorkerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
+				     [worker_host_specs,ClusterSpec],5000),
+    ConnectHostSpecs=list_duplicates:remove(lists:append(ControllerHostSpecs,WorkerHostSpecs)),
+   
 
     InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
     
-    InitialResult=[create_controller(InstanceId,ClusterSpec,HostSpec)||HostSpec<-ControllerHostSpecs],
-    io:format("InitialResult  ~p~n",[{InitialResult, ?MODULE,?LINE,?FUNCTION_NAME}]),
-    MissingControllers=[Node||{error,Node}<-InitialResult],
-    PresentControllers=[Node||{ok,Node}<-InitialResult],
+    _InitialResult=create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs),
+    
+    PresentConnectNodes=present_connect_nodes(InstanceId),
+    MissingConnectNodes=missing_connect_nodes(InstanceId),
+   
 
-    io:format("INFO:PresentControllers ~p~n",[PresentControllers]),   
-    io:format("INFO:MissingControllers ~p~n",[MissingControllers]),
+    io:format("INFO:PresentConnectNodes ~p~n",[PresentConnectNodes]),   
+    io:format("INFO:MissingConnectNodes ~p~n",[MissingConnectNodes]),
 
     InitialState=State#state{cluster_spec=ClusterSpec,
 			     instance_id=InstanceId,
-			     missing_controllers=MissingControllers,
-			     present_controllers=PresentControllers
+			     missing_connect_nodes=MissingConnectNodes,
+			     present_connect_nodes=PresentConnectNodes
 			    },
   %  gl=InitialState,
-    rpc:cast(node(),?MODULE,heartbeat,[{PresentControllers,MissingControllers}]),
+    rpc:cast(node(),?MODULE,heartbeat,[{PresentConnectNodes,MissingConnectNodes}]),
     {noreply,InitialState};
 
 
-handle_cast({heartbeat,{NewPresentControllers,NewMissingControllers}}, State) ->
-    NoChangeStatus=lists:sort(NewPresentControllers) =:= lists:sort(State#state.present_controllers),
+handle_cast({heartbeat,{NewPresentConnectNodes,NewMissingConnectNodes}}, State) ->
+    NoChangeStatus=lists:sort(NewPresentConnectNodes) =:= lists:sort(State#state.present_connect_nodes),
     case NoChangeStatus of
 	false->
 	    io:format("INFO: cluster state changed  ~p~n",[{date(),time()}]),  
 	   
-	    io:format("INFO:PresentControllers ~p~n",[State#state.present_controllers]),   
-	    io:format("INFO:MissingControllers ~p~n",[State#state.missing_controllers]),
+	    io:format("INFO:PresentConnectNodes ~p~n",[State#state.present_connect_nodes]),   
+	    io:format("INFO:MissingConnectNodes ~p~n",[State#state.missing_connect_nodes]),
 	  
-	    io:format("INFO:NewMissingControllers ~p~n",[NewPresentControllers]),   
-	    io:format("INFO:NewMissingControllers ~p~n",[NewMissingControllers]);
+	    io:format("INFO:NewPresentConnectNodes ~p~n",[NewPresentConnectNodes]),   
+	    io:format("INFO:NewMissingConnectNodes ~p~n",[NewMissingConnectNodes]);
 	true->
 	    ok
     end,
 
-    NewState=State#state{present_controllers=NewPresentControllers,
-			 missing_controllers=NewMissingControllers},
+    NewState=State#state{present_connect_nodes=NewPresentConnectNodes,
+			 missing_connect_nodes=NewMissingConnectNodes},
   
     spawn(fun()->hbeat(State#state.instance_id,State#state.cluster_spec) end),
     {noreply, NewState};
@@ -215,57 +223,58 @@ hbeat(InstanceId,ClusterSpec)->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 -define(TimeOut,10000).
-
-wanted_state_controllers(ClusterInstanceId,ClusterSpec)->
-   
-    check_status_controllers(ClusterInstanceId,ClusterSpec).
-    
-check_status_controllers(ClusterInstanceId,ClusterSpec)->
-    {ok,ControllerHostSpecs}=rd:rpc_call(db_etcd,db_cluster_spec,read,
-					 [controller_host_specs,ClusterSpec],5000),
-    
-    ControllerNodes=rd:rpc_call(db_etcd,db_cluster_instance,controller_nodes,[ClusterInstanceId],5000),
-    io:format("ControllerNodes  ~p~n",[{ControllerNodes, ?MODULE,?LINE,?FUNCTION_NAME}]),
-    Present=[Node||Node<-ControllerNodes,
-		   pong=:=net_adm:ping(Node)],
-    Missing=[Node||Node<-ControllerNodes,
-		pang=:=net_adm:ping(Node)],
-    io:format("Present  ~p~n",[{Present, ?MODULE,?LINE,?FUNCTION_NAME}]),
-    io:format("Missing  ~p~n",[{Missing, ?MODULE,?LINE,?FUNCTION_NAME}]),
-
-    {Present,Missing}.
     
 
-create_controller(ClusterInstanceId,ClusterSpec,HostSpec)->
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%% --------------------------------------------------------------------
+missing_connect_nodes(InstanceId)->
+    [Node||Node<-db_cluster_instance:nodes(connect,InstanceId), 
+	   pang=:=net_adm:ping(Node)].
+present_connect_nodes(InstanceId)->
+    [Node||Node<-db_cluster_instance:nodes(connect,InstanceId), 
+	   pong=:=net_adm:ping(Node)].
+
+create_connect_nodes(InstanceId,ClusterSpec,ConnectHostSpecs)->
+    DbaseInfo=connect_dbase_info(ConnectHostSpecs,InstanceId,ClusterSpec,[]),
+    io:format("DbaseInfo ~p~n",[{DbaseInfo,?MODULE,?LINE,?FUNCTION_NAME}]),
+    NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
+    MissingConnectNodes=[Node||Node<-NodesToConnect, 
+			       pang=:=net_adm:ping(Node)],
+    [create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)||PodNode<-MissingConnectNodes].
+    
+
+create_connect_node(InstanceId,ClusterSpec,PodNode,NodesToConnect)->
     {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_spec,read,[cookie,ClusterSpec],5000),
     {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_spec,read,[dir,ClusterSpec],5000),
+    {ok,HostSpec}=rd:rpc_call(db_etcd,db_cluster_instance,read,[host_spec,InstanceId,PodNode],5000),
     {ok,HostName}=rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000),
-       
-   %  PodName=erlang:integer_to_list(os:system_time(microsecond),36)++"_controller",
-    PodName="controller",
+    
+    {ok,PodName}=rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_name,InstanceId,PodNode],5000),
+    {ok,PodDir}=rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_dir,InstanceId,PodNode],5000),
     PaArgs=" -detached ",
     EnvArgs=" ",
-    ControllerNodes=rd:rpc_call(db_etcd,db_cluster_instance,controller_nodes,[ClusterInstanceId],5000),
-    io:format("ControllerNodes  ~p~n",[{ControllerNodes, ?MODULE,?LINE,?FUNCTION_NAME}]),
+    ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,NodesToConnect,?TimeOut). 
 
-    % PodDir=filename:join(ClusterDir,PodName++".dir"),
+
+
+connect_dbase_info([],_ClusterInstanceId,_ClusterSpec,Acc)->
+    Acc;
+connect_dbase_info([HostSpec|T],ClusterInstanceId,ClusterSpec,Acc)->
+    {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_spec,read,[dir,ClusterSpec],5000),
+    {ok,HostName}=rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000),
+    PodName=ClusterSpec++"_connect",
+    PodNode=list_to_atom(PodName++"@"++HostName),
     PodDir=ClusterDir,
-    
-    Result=case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ControllerNodes,?TimeOut) of
-	       {ok,PodNode,PodDir,_}->
-		   Type=controller,
-		   Status=created,   
-		   {atomic,ok}=db_cluster_instance:create(ClusterInstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status),
-		   case net_adm:ping(PodNode) of
-		       pong->
-			   {ok,PodNode};
-		       pang ->
-			   {error,PodNode}
-		   end;
-	       {error,Reason}->
-		   {error,list_to_atom(PodName++"@"++HostName)}
+    Type=connect,
+    Status=candidate,
+    NewAcc=case db_cluster_instance:create(ClusterInstanceId,ClusterSpec,Type,PodName,PodNode,PodDir,HostSpec,Status) of
+	       {atomic,ok}->
+		   [ok|Acc];
+	       Reason->
+		   [{error,[Reason]}|Acc]
 	   end,
-    Result.
-		   
-
-		   
+    connect_dbase_info(T,ClusterInstanceId,ClusterSpec,NewAcc).
+     
