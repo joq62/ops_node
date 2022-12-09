@@ -21,6 +21,7 @@
 %% External exports
 -export([
 	 wanted_state/2,
+	 get_pod/2,
 	 
 	 initiate/1,
 	 heartbeat/0,
@@ -61,13 +62,17 @@ start()-> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 stop()-> gen_server:call(?MODULE, {stop},infinity).
 
 
+initiate(InstanceId)-> 
+    gen_server:call(?MODULE, {initiate,InstanceId},infinity).
+get_pod(ApplSpec,HostSpec)->
+      gen_server:call(?MODULE, {get_pod,ApplSpec,HostSpec},infinity).
+
 ping() ->
     gen_server:call(?MODULE, {ping}).
 %% cast
 heartbeat()-> 
     gen_server:cast(?MODULE, {heartbeat}).
-initiate(InstanceId)-> 
-    gen_server:call(?MODULE, {initiate,InstanceId},infinity).
+
 
 %% ====================================================================
 %% Server functions
@@ -102,8 +107,30 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_call({connect_nodes_info},_From, State) ->
-    Reply=State,
+handle_call({get_pod,ApplSpec,HostSpec},_From, State) ->
+    % Candidates
+    Reply=case rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000) of 
+	      {error,Reason}->
+		  {error,Reason};
+	      {ok,HostName}->
+		  case rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000) of
+		      {error,Reason}->
+			  {error,Reason};
+		      {ok,App}->
+			  Candidates=[PodNode||PodNode<-State#state.present_worker_nodes,
+					       {ok,HostName}==rpc:call(PodNode,inet,gethostname,[],5000),
+					       false==lists:keymember(App,1,rpc:call(PodNode,application,which_applications,[],5000))],
+			  % lowest number of applications
+			  NumApplCandidate=[{list_length:start(rpc:call(PodNode,application,which_applications,[],5000)),PodNode}||PodNode<-Candidates],
+			  PrioritizedCandidates=[PodNode||{_,PodNode}<-lists:keysort(1,NumApplCandidate)],
+			  case PrioritizedCandidates of
+			      []->
+				  [];
+			      [Candidate|_] ->
+				  {ok,Candidate}
+			  end
+		  end
+	  end,
     {reply, Reply, State};
 
 handle_call({ping},_From, State) ->
@@ -261,7 +288,6 @@ hbeat(InstanceId,ClusterSpec)->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 wanted_state(InstanceId,_ClusterSpec)->
-    NodesToConnect=db_cluster_instance:nodes(connect,InstanceId),
     MissingControllerNodes=missing_controller_nodes(InstanceId),
     MissingWorkerNodes=missing_worker_nodes(InstanceId),
     [restart_pod(InstanceId,PodNode)||PodNode<-MissingControllerNodes],
@@ -300,7 +326,6 @@ restart_pod(InstanceId,PodNode)->
     {ok,ClusterSpec}=rd:rpc_call(db_etcd,db_cluster_instance,read,[cluster_spec,InstanceId,PodNode],5000),
     {ok,HostSpec}=rd:rpc_call(db_etcd,db_cluster_instance,read,[host_spec,InstanceId,PodNode],5000),
     {ok,Cookie}=rd:rpc_call(db_etcd,db_cluster_spec,read,[cookie,ClusterSpec],5000),
-    {ok,ClusterDir}=rd:rpc_call(db_etcd,db_cluster_spec,read,[dir,ClusterSpec],5000),
     ConnectNodes=rd:rpc_call(db_etcd,db_cluster_instance,nodes,[connect,InstanceId],5000),
     
     {ok,HostName}=rd:rpc_call(db_etcd,db_host_spec,read,[hostname,HostSpec],5000),
@@ -384,7 +409,7 @@ create_worker_pod(InstanceId,ClusterSpec,N,[HostSpec|T],Acc) ->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 create_pod_node(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,TimeOut)->
-    case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,?TimeOut) of
+    case ops_vm:ssh_create(HostName,PodName,PodDir,Cookie,PaArgs,EnvArgs,ConnectNodes,TimeOut) of
 	{error,Reason}->
 	    {error,Reason};
 	  {ok,PodNode,_,_}->

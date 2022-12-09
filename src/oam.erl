@@ -7,7 +7,7 @@
 %%% 
 %%% Created : 10 dec 2012
 %%% -------------------------------------------------------------------
--module(ops_node_server).
+-module(oam).
  
 -behaviour(gen_server).
 
@@ -16,11 +16,15 @@
 %% --------------------------------------------------------------------
 
 %% --------------------------------------------------------------------
--define(LocalResources,[{db_etcd,node()},{nodelog,node()}]).
--define(Target,[pod_app,db_etcd,nodelog]).
+-define(HeartbeatTime,20*1000).
 
 %% External exports
 -export([
+	 new/2,
+	 update/2,
+	 delete/2,
+	 
+	 ping/0
 	]).
 
 
@@ -37,9 +41,8 @@
 -export([init/1, handle_call/3,handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%-------------------------------------------------------------------
-
--record(state,{cluster_spec
-	     	      
+-record(state,{
+	       
 	      }).
 
 
@@ -52,8 +55,15 @@
 start()-> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 stop()-> gen_server:call(?MODULE, {stop},infinity).
 
+new(AppSpec,HostSpec)->
+    gen_server:call(?MODULE, {new,AppSpec,HostSpec},infinity).
+update(AppSpec,PodNode)->
+    gen_server:call(?MODULE, {update,AppSpec,PodNode},infinity).
+delete(AppSpec,PodNode)->
+    gen_server:call(?MODULE, {delete,AppSpec,PodNode},infinity).
 
-
+ping() ->
+    gen_server:call(?MODULE, {ping}).
 %% cast
 
 %% ====================================================================
@@ -68,15 +78,10 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 %%          ignore               |
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
-init([]) ->
-    AllEnvs=application:get_all_env(),
-    {cluster_spec,ClusterSpec}=lists:keyfind(cluster_spec,1,AllEnvs),
-    db_etcd:install(),
-    {ok,Cookie}=db_cluster_spec:read(cookie,ClusterSpec),
-        
-    erlang:set_cookie(node(), list_to_atom(Cookie)),
-        
-    {ok, #state{cluster_spec=ClusterSpec},0}.   
+init([]) -> 
+    io:format("Started Server ~p~n",[{?MODULE,?LINE}]),
+
+    {ok, #state{}}.   
  
 
 %% --------------------------------------------------------------------
@@ -89,60 +94,20 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-
-handle_call({gitpath,ApplSpec},_From, State) ->
-    Reply=db_appl_spec:read(gitpath,ApplSpec),
-    {reply, Reply, State};
-
-handle_call({app,ApplSpec},_From, State) ->
-    Reply=db_appl_spec:read(app,ApplSpec),
-    {reply, Reply, State};
-
-
-handle_call({appl_name,ApplSpec},_From, State) ->
-    Reply=db_appl_spec:read(appl_name,ApplSpec),
-    {reply, Reply, State};
-
-
-handle_call({hostname,HostSpec},_From, State) ->
-    Reply=db_host_spec:read(hostname,HostSpec),
-    {reply, Reply, State};
-
-handle_call({worker_host_specs,ClusterDeploymentSpec},_From, State) ->
-    Reply=db_cluster_deployment:read(worker_host_specs,ClusterDeploymentSpec),
-    {reply, Reply, State};
-
-handle_call({application_spec,ApplicationSpec},_From, State) ->
-    Reply=db_appl_spec:read(ApplicationSpec),
-    {reply, Reply, State};
-
-handle_call({application_deployment_info,ApplDeploymentSpec},_From, State) ->
-    Reply=db_appl_deployment:read(ApplDeploymentSpec),
-    {reply, Reply, State};
-
-handle_call({cluster_application_deployments,
-	     appl_deployment_specs,ClusterApplDeployment},_From, State) ->
-    Reply= db_cluster_application_deployment:read(appl_deployment_specs,ClusterApplDeployment),
+handle_call({new,AppSpec,HostSpec},_From, State) ->
+    Reply=ops_appl_operator_server:new(AppSpec,HostSpec),
     
     {reply, Reply, State};
-handle_call({cluster_application_deployments,
-	     cluster_spec,ClusterSpec},_From, State) ->
-    Reply=[SpecId||{SpecId,X_ClusterSpec,_ApplDeploySpecs}<-db_cluster_application_deployment:read_all(),
-						       X_ClusterSpec=:=ClusterSpec],
-    {reply, Reply, State};
 
-handle_call({cluster_spec},_From, State) ->
-    Reply=State#state.cluster_spec,
-    {reply, Reply, State};
-
-
-handle_call({get_state},_From, State) ->
-    Reply=State,
+handle_call({delete,AppSpec,PodNode},_From, State) ->
+    Reply=ops_appl_operator_server:delete(AppSpec,PodNode),
+    
     {reply, Reply, State};
 
 handle_call({ping},_From, State) ->
     Reply=pong,
     {reply, Reply, State};
+
 
 handle_call(Request, From, State) ->
     Reply = {unmatched_signal,?MODULE,Request,From},
@@ -167,20 +132,6 @@ handle_cast(Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 
-handle_info(timeout, State) -> %% Initil start - kick orchestration 
- %   io:format("timeout ~p~n",[{?MODULE,?LINE}]), 
-    [rd:add_local_resource(Type,Instance)||{Type,Instance}<-?LocalResources],
-    [rd:add_target_resource_type(Type)||Type<-?Target],
-    rd:trade_resources(),
-    timer:sleep(3000),
-    ok=rd:rpc_call(db_etcd,db_cluster_instance,create_table,[],5000),
-    InstanceId=erlang:integer_to_list(os:system_time(microsecond),36)++"_id",
-    ok=ops_connect_operator_server:initiate(InstanceId),
-    ok=ops_pod_operator_server:initiate(InstanceId),
-    ok=ops_appl_operator_server:initiate(InstanceId),
-    
-    {noreply, State};
-
 handle_info(Info, State) ->
     io:format("unmatched match~p~n",[{Info,?MODULE,?LINE}]), 
     {noreply, State}.
@@ -203,4 +154,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% --------------------------------------------------------------------
 %%% Internal functions
+%% --------------------------------------------------------------------
+
+
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%% --------------------------------------------------------------------
+
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%% --------------------------------------------------------------------
+
+%% --------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------

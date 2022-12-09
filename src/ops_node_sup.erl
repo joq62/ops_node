@@ -43,6 +43,10 @@ init([]) ->
 		     start=>{ops_connect_operator_server,start,[]}},
 		   #{id=>ops_pod_operator,
 		     start=>{ops_pod_operator_server,start,[]}},
+		   #{id=>ops_appl_operator,
+		     start=>{ops_appl_operator_server,start,[]}},
+		   #{id=>oam,
+		     start=>{oam,start,[]}},
 		   #{id=>ops_node,
 		     start=>{ops_node_server,start,[]}}		   
 		 ],
