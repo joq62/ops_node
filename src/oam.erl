@@ -21,7 +21,7 @@
 %% External exports
 -export([
 	 new/2,
-	 update/2,
+	 update/3,
 	 delete/2,
 	 
 	 ping/0
@@ -57,8 +57,8 @@ stop()-> gen_server:call(?MODULE, {stop},infinity).
 
 new(AppSpec,HostSpec)->
     gen_server:call(?MODULE, {new,AppSpec,HostSpec},infinity).
-update(AppSpec,PodNode)->
-    gen_server:call(?MODULE, {update,AppSpec,PodNode},infinity).
+update(AppSpec,PodNode,HostSpec)->
+    gen_server:call(?MODULE, {update,AppSpec,PodNode,HostSpec},infinity).
 delete(AppSpec,PodNode)->
     gen_server:call(?MODULE, {delete,AppSpec,PodNode},infinity).
 
@@ -101,8 +101,19 @@ handle_call({new,AppSpec,HostSpec},_From, State) ->
 
 handle_call({delete,AppSpec,PodNode},_From, State) ->
     Reply=ops_appl_operator_server:delete(AppSpec,PodNode),
-    
+  
     {reply, Reply, State};
+
+handle_call({update,AppSpec,PodNode,HostSpec},_From, State) ->
+    Reply=case ops_appl_operator_server:delete(AppSpec,PodNode)of
+	      {error,Reason}->
+		  {error,Reason};
+	      ok->
+		  ops_appl_operator_server:new(AppSpec,HostSpec)
+	  end,
+		  
+    {reply, Reply, State};
+
 
 handle_call({ping},_From, State) ->
     Reply=pong,

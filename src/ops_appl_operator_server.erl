@@ -172,21 +172,42 @@ code_change(_OldVsn, State, _Extra) ->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 appl_del(ApplSpec,PodNode,InstanceId)->
-    {ok,PodDir}=rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_dir,InstanceId,PodNode],5000),
-    {ok,PodApp}=rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000),
-    
-    ok=appl:stop(PodNode,PodApp),
-
-    ApplDir=filename:join([PodDir,ApplSpec]),
-    ok=appl:unload(PodNode,PodApp,ApplDir),
-
-    {ok,LocalTypeList}=rd:rpc_call(db_etcd,db_appl_spec,read,[local_type,ApplSpec],5000),
-    [rpc:call(PodNode,rd,delete_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypeList],
-    rpc:call(PodNode,rd,trade_resources,[],5000),
-    {atomic,ok}=rd:rpc_call(db_etcd,db_appl_instance,delete,[InstanceId,ApplSpec,PodNode],5000),
-    timer:sleep(2000),
-
-    ok.
+    Result=case rd:rpc_call(db_etcd,db_cluster_instance,read,[pod_dir,InstanceId,PodNode],5000) of
+		    {error,Reason}->
+			{error,Reason};
+		    {ok,PodDir}->
+		   case rd:rpc_call(db_etcd,db_appl_spec,read,[app,ApplSpec],5000) of
+		       {error,Reason}->
+			   {error,Reason};	       
+		       {ok,PodApp}->
+			   case appl:stop(PodNode,PodApp) of
+			       {error,Reason}->
+				   {error,Reason};
+			       ok->
+				   ApplDir=filename:join([PodDir,ApplSpec]),
+				   case appl:unload(PodNode,PodApp,ApplDir) of
+				       {error,Reason}->
+					   {error,Reason};
+				       ok->
+					   case rd:rpc_call(db_etcd,db_appl_spec,read,[local_type,ApplSpec],5000) of
+					       {error,Reason}->
+						   {error,Reason}; 
+					       {ok,LocalTypeList}->
+						   [rpc:call(PodNode,rd,delete_local_resource,[LocalType,PodNode],5000)||LocalType<-LocalTypeList],
+						   rpc:call(PodNode,rd,trade_resources,[],5000),
+						   timer:sleep(2000),
+						   case rd:rpc_call(db_etcd,db_appl_instance,delete,[InstanceId,ApplSpec,PodNode],5000) of
+						       {atomic,ok}->
+							   ok;
+						       Reason ->
+							   {error,Reason,?MODULE,?LINE}
+						   end
+					   end
+				   end
+			   end
+		   end
+	   end,
+    Result.
 %% --------------------------------------------------------------------
 %% Function: terminate/2
 %% Description: Shutdown the server
@@ -218,7 +239,7 @@ appl_new(ApplSpec,HostSpec,InstanceId)->
 		   [rpc:call(PodNode,rd,add_target_resource_type,[TargetType],5000)||TargetType<-TargetTypeList],
 		   rpc:call(PodNode,rd,trade_resources,[],5000),
 		   timer:sleep(2000),
-		   {atomic,ok}=rd:rpc_call(db_etcd,db_appl_instance,create,[InstanceId,ApplSpec,PodNode,{date(),time()}],5000),
+		   {atomic,ok}=rd:rpc_call(db_etcd,db_appl_instance,create,[InstanceId,ApplSpec,PodNode,HostSpec,{date(),time()}],5000),
 		   {ok,PodNode}
 	   end,
     Result.
